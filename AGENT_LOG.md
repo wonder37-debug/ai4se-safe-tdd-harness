@@ -99,3 +99,24 @@
 - **人工干预**：用户"设计已确认"，要求先填本日志再触发 writing-plans。
 - **agent 输出**：本日志 + 随后调用 `writing-plans` 生成 `PLAN.md`。
 - **教训**：brainstorming 的终止态是"调用 writing-plans"，不调用其它实现技能；签字前不写实现代码（§4 硬门）。
+
+---
+
+## 2026-07-08 · 阶段 6：writing-plans — 生成 PLAN.md
+
+- **触发的技能**：`writing-plans`。
+- **task 编号**：WP-1。
+- **关键 context**：读取已签字 SPEC（commit `374a95b`）；用户要求"先填 AGENT_LOG 再触发 writing-plans"。
+- **关键决策（agent 自主）**：
+  - 技术栈落定为 **TypeScript 5 + Jest/ts-jest**（SPEC §8 只写了 Node.js，TS 在此敲定）——理由：接口多、需类型约束保证 mockable，契合"机制是代码"评分；ts-jest 一次配置约 30min，烂尾风险低。
+  - 运行时依赖收敛为**仅 `shell-quote`**（Node 20 内置 `http/crypto/fs/child_process/global fetch`），最大限度降依赖烂尾风险。
+  - 文件落点：`PLAN.md` 放仓库根（项目 §4.3 硬交付名覆盖技能默认路径 `docs/superpowers/plans/...`）。
+  - 演示靶项目用 `run-tests.sh`（脚本判 `add.js` 正确性 + 输出 Jest 格式 stderr）而非嵌套跑 jest，规避子进程 jest 的解析/解析 flakiness，保 AC3 确定性。
+- **agent 输出**：`PLAN.md`——18 个 TDD 任务（每任务 5 步：写失败测试→验证失败→最小实现→验证通过→commit），每个含完整代码、确切文件路径、确切命令与预期输出。头部含 Goal/Architecture/Tech Stack/Global Constraints；含文件结构图、依赖/并行度图、Self-Review（spec 覆盖 / 占位符扫描 / 类型一致性三查）。覆盖 SPEC 全部 12 节。
+- **commit hash**：见本次提交（PLAN.md + AGENT_LOG.md 阶段 6）。
+- **人工干预**：无（用户仅要求按 SPEC 生成 PLAN）。
+- **教训**：
+  - writing-plans 的"完整代码无占位符"要求与"2 周可完成性"存在张力——通过让每个模块实现最小化（YAGNI）兼顾：如 `run_tests` 只捕获不解析、解析归 `FeedbackClassifier`、HITL 挂起 resolver 用最简 Map。
+  - 跨任务类型一致性要专门做一次 Self-Review 扫描（如 `complete` 返回 `{text,stopReason}` 在 T4/T13/T12 三处须一致），单任务内一致不够。
+  - 写 PLAN 时若一个 task 会改另一个 task 已交付的产物（如 T18 重写 `src/index.ts` 但 T1 smoke test 依赖 `greet`），必须在计划里显式声明"保留 export 不破坏前序测试"。
+- **下一步**：待用户选执行模式（subagent-driven / inline）后，调用对应子技能按 task 推进；每完成一 task 在本日志追加节点 + 在 PLAN.md 标 commit hash。

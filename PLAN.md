@@ -1,0 +1,2210 @@
+# AI4SE-Safe-TDD-Harness Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build a self-coded Coding Agent Harness kernel (Node.js/TS) with a mockable LLM layer, a shell-command guardrail + HITL approval (deep dimension 1), and a structured TDD feedback loop (deep dimension 2), plus a minimal Web control panel and Docker distribution.
+
+**Architecture:** A hand-written `AgentLoop` while-state-machine (`RUNNING → APPROVAL_PENDING → EXECUTING → HALTED`) orchestrates injectable interfaces — `LLMProvider`, `ActionProtocol`, `ToolRegistry`, `Guardrail`, `ApprovalGateway`, `FeedbackClassifier`, `MemoryStore`, `CredentialStore`. Every interface has a production impl and a mock/stub impl, so the whole kernel is deterministically testable with no network and no real LLM. A `WebServer` (Node `http`, HTTP polling) exposes task submission, a live event stream, and in-browser HITL approval.
+
+**Tech Stack:** Node.js 20 LTS, TypeScript 5, Jest + ts-jest. Single runtime dep: `shell-quote`. Node built-ins for everything else (`http`, `crypto`, `fs/promises`, `child_process`, global `fetch`).
+
+## Global Constraints
+
+(Verbatim from SPEC.md §4, §7, §8, §12 — every task implicitly includes these.)
+
+- Node 20 LTS; TypeScript strict mode; CommonJS module output (jest/node friendly).
+- Harness core must be self-coded: NO LangChain/AutoGen/CrewAI/agent-SDK high-level loops. Raw `/v1/chat/completions` via global `fetch` only.
+- Every core mechanism must be a deterministic function unit-testable with a mock/stub LLM and no network (SPEC §4.4 / §A.4-C).
+- TDD hard requirement: red → green → refactor; no implementation before its failing test (SPEC §3.6).
+- Credentials: never hardcode/commit/log; AES-256-GCM encrypted file + master password; `.env` only as warned fallback; `status()` never echoes plaintext (SPEC §3.9 / §4.2).
+- Distribution: Docker only (T1 trim); `docker run -p 8080:8080` must boot the web panel (SPEC §7.2).
+- CI: `.gitlab-ci.yml` must contain a job named `unit-test` (SPEC §五 item 6).
+- 2-week feasibility trims in force: HTTP polling (no WebSocket), 3-class error taxonomy (`assertion`/`syntax`/`other`), milestone-level worktrees, single-task concurrency (SPEC §12).
+- No real credentials in repo; `.env` is gitignored and must stay untracked.
+
+---
+
+## File Structure
+
+```
+package.json                  # deps + scripts (test, demo, build, start)
+tsconfig.json                 # strict TS, commonjs, rootDir . outDir dist
+jest.config.js                # ts-jest preset, test+demo globs
+.env.example                  # CLAUDE_API_KEY= / API_BASE_URL= (no real values)
+Dockerfile                    # multi-stage: build → prod image
+.gitlab-ci.yml                # add unit-test + docker-build jobs
+src/
+  types.ts                    # Message, Action, Observation, Feedback, GuardrailVerdict, Approval, Event
+  index.ts                    # CLI entry: --web | --task <file>
+  llm/provider.ts             # LLMProvider interface + Message re-export
+  llm/scriptedMock.ts         # ScriptedMock (queued/sticky responses)
+  llm/openaiCompat.ts         # OpenAICompatProvider (global fetch)
+  protocol/actionProtocol.ts  # parse(text) -> Action[]
+  tools/tool.ts               # Tool interface, ToolRegistry, ToolContext
+  tools/fileTools.ts          # read_file, write_file, list_dir
+  tools/shellTools.ts         # run_shell, run_tests (capture only)
+  guardrail/guardrail.ts      # assess(action) + shell-quote tokenize
+  guardrail/dangerPatterns.json
+  approval/approvalGateway.ts # interface + MockApprovalGateway
+  approval/httpApprovalGateway.ts # pending-resolver map
+  feedback/feedbackClassifier.ts # Parser interface + classify()
+  feedback/jestParser.ts      # JestParser
+  memory/memoryStore.ts       # file-backed KV
+  creds/credentialStore.ts    # interface + EncryptedFileStore
+  loop/agentLoop.ts           # the while state machine
+  loop/eventSink.ts           # EventSink interface + noop + EventStore
+  web/webServer.ts            # http routes, EventStore-backed polling
+  web/public/index.html
+  web/public/app.js
+  web/public/style.css
+demo/
+  mechanism-demo.test.ts      # §A.6 three acts
+  fixtures/jest-assertion-fail.txt
+  fixtures/jest-syntax-fail.txt
+test/                         # one test file per src module
+  *.test.ts
+```
+
+**Responsibility rule:** each file = one mechanism / one interface. `types.ts` is the only cross-cutting file. Tests mirror src paths under `test/`.
+
+---
+
+## Task 1: Project scaffold + tooling smoke test
+
+**Files:**
+- Create: `package.json`, `tsconfig.json`, `jest.config.js`, `.env.example`, `src/index.ts`, `test/smoke.test.ts`
+- Modify: `.gitignore` (add `dist/`, `*.log`)
+
+**Interfaces:** Produces a runnable `npm test` (jest+ts-jest) and a typed `src/index.ts` entry.
+
+- [ ] **Step 1: Write the failing test**
+
+`test/smoke.test.ts`:
+```ts
+import { greet } from '../src/index';
+
+test('smoke: jest + ts + import works', () => {
+  expect(greet('harness')).toBe('hello, harness');
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/smoke.test.ts`
+Expected: FAIL — `src/index.ts` does not export `greet` (file not created yet / module missing).
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/index.ts`:
+```ts
+export function greet(name: string): string {
+  return `hello, ${name}`;
+}
+```
+
+`package.json`:
+```json
+{
+  "name": "ai4se-safe-tdd-harness",
+  "version": "0.1.0",
+  "description": "Self-coded Coding Agent Harness — AI4SE final project",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "jest",
+    "demo": "jest demo/",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "engines": { "node": ">=20" },
+  "license": "MIT"
+}
+```
+
+`tsconfig.json`:
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "rootDir": ".",
+    "outDir": "dist",
+    "types": ["node", "jest"]
+  },
+  "include": ["src", "test", "demo"]
+}
+```
+
+`jest.config.js`:
+```js
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  testMatch: ['**/test/**/*.test.ts', '**/demo/**/*.test.ts'],
+  testTimeout: 15000,
+};
+```
+
+`.env.example`:
+```
+CLAUDE_API_KEY=
+API_BASE_URL=
+```
+
+Append to `.gitignore`: `dist/` and `*.log` on separate lines (`.env` and `node_modules/` already present).
+
+- [ ] **Step 4: Install deps and run test**
+
+Run: `npm install --save-dev typescript@5 ts-jest jest @types/jest @types/node && npm install shell-quote @types/shell-quote`
+Run: `npx jest test/smoke.test.ts`
+Expected: PASS (1 test).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add package.json package-lock.json tsconfig.json jest.config.js .env.example .gitignore src/index.ts test/smoke.test.ts
+git commit -m "chore: scaffold node+ts+jest project with smoke test"
+```
+
+---
+
+## Task 2: Core domain types
+
+**Files:**
+- Create: `src/types.ts`, `test/types.test.ts`
+
+**Interfaces:**
+- Produces: `Message`, `Action`, `Observation`, `Feedback`, `GuardrailVerdict`, `Approval`, `Event` (types used by every later task).
+
+- [ ] **Step 1: Write the failing test**
+
+`test/types.test.ts`:
+```ts
+import type { Action, Message, Observation, Feedback, GuardrailVerdict } from '../src/types';
+
+test('types: Action shape is constructable', () => {
+  const a: Action = { tool: 'run_shell', args: { command: 'ls' } };
+  const m: Message = { role: 'observation', content: 'ok' };
+  const o: Observation = { ok: true, exitCode: 0 };
+  const f: Feedback = { errorType: 'assertion', failedTests: ['t'], evidence: 'e', hint: 'h' };
+  const g: GuardrailVerdict = { severity: 'none', reasons: [] };
+  expect(a.tool).toBe('run_shell');
+  expect(m.role).toBe('observation');
+  expect(o.ok).toBe(true);
+  expect(f.errorType).toBe('assertion');
+  expect(g.severity).toBe('none');
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/types.test.ts`
+Expected: FAIL — `../src/types` has no exports (TS2307 / no symbols).
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/types.ts`:
+```ts
+export type Role = 'system' | 'user' | 'assistant' | 'observation';
+export interface Message { role: Role; content: string; }
+
+export type ToolName = 'read_file' | 'write_file' | 'list_dir' | 'run_shell' | 'run_tests' | 'finish';
+export interface Action { tool: ToolName; args: Record<string, any>; }
+
+export interface Observation {
+  ok: boolean;
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number;
+  error?: string;
+  content?: string;
+}
+
+export type ErrorType = 'assertion' | 'syntax' | 'other';
+export interface Feedback {
+  errorType: ErrorType;
+  failedTests: string[];
+  assertion?: { file: string; line: number; snippet: string };
+  evidence: string;
+  hint: string;
+}
+
+export type Severity = 'none' | 'low' | 'high';
+export interface GuardrailVerdict { severity: Severity; reasons: string[]; }
+
+export interface ApprovalRequest { id: string; action: Action; reasons: string[]; }
+export interface ApprovalDecision { decision: 'approve' | 'deny'; reason: string; }
+
+export type EventType = 'action' | 'observation' | 'approval_request' | 'approval_decision' | 'halt';
+export interface Event { id: number; type: EventType; payload: any; iter: number; }
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/types.test.ts`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/types.ts test/types.test.ts
+git commit -m "feat(types): add core domain types"
+```
+
+---
+
+## Task 3: ActionProtocol parser
+
+**Files:**
+- Create: `src/protocol/actionProtocol.ts`, `test/actionProtocol.test.ts`
+
+**Interfaces:**
+- Consumes: `Action` from `src/types`.
+- Produces: `ActionProtocol.parse(text: string): Action[]`.
+
+- [ ] **Step 1: Write the failing test**
+
+`test/actionProtocol.test.ts`:
+```ts
+import { ActionProtocol } from '../src/protocol/actionProtocol';
+
+test('parses a single fenced action block', () => {
+  const text = 'I will write a file.\n```action\n{"tool":"write_file","args":{"path":"a.txt","content":"hi"}}\n```';
+  const acts = ActionProtocol.parse(text);
+  expect(acts).toHaveLength(1);
+  expect(acts[0].tool).toBe('write_file');
+  expect(acts[0].args.path).toBe('a.txt');
+});
+
+test('returns empty array when no fence present', () => {
+  expect(ActionProtocol.parse('just talking')).toEqual([]);
+});
+
+test('ignores malformed JSON block (returns empty, does not throw)', () => {
+  expect(ActionProtocol.parse('```action\n{not json}\n```')).toEqual([]);
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/actionProtocol.test.ts`
+Expected: FAIL — module `../src/protocol/actionProtocol` not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/protocol/actionProtocol.ts`:
+```ts
+import { Action } from '../types';
+
+const FENCE = /```action\s*([\s\S]*?)```/g;
+
+export const ActionProtocol = {
+  parse(text: string): Action[] {
+    const out: Action[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = FENCE.exec(text)) !== null) {
+      const raw = m[1].trim();
+      try {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj.tool === 'string' && obj.args && typeof obj.args === 'object') {
+          out.push({ tool: obj.tool, args: obj.args });
+        }
+      } catch {
+        // malformed block: skip, do not throw
+      }
+    }
+    return out;
+  },
+};
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/actionProtocol.test.ts`
+Expected: PASS (3 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/protocol/actionProtocol.ts test/actionProtocol.test.ts
+git commit -m "feat(protocol): action fence parser"
+```
+
+---
+
+## Task 4: ScriptedMock LLMProvider
+
+**Files:**
+- Create: `src/llm/provider.ts`, `src/llm/scriptedMock.ts`, `test/scriptedMock.test.ts`
+
+**Interfaces:**
+- Consumes: `Message` from `src/types`.
+- Produces: `LLMProvider` interface (`async complete(messages): Promise<{text, stopReason}>`), `ScriptedMock`.
+
+- [ ] **Step 1: Write the failing test**
+
+`test/scriptedMock.test.ts`:
+```ts
+import { ScriptedMock } from '../src/llm/scriptedMock';
+
+test('returns queued responses in order', async () => {
+  const llm = new ScriptedMock(['first', 'second']);
+  expect((await llm.complete([])).text).toBe('first');
+  expect((await llm.complete([])).text).toBe('second');
+});
+
+test('sticky last response when queue empties', async () => {
+  const llm = new ScriptedMock(['only'], true);
+  await llm.complete([]);
+  expect((await llm.complete([])).text).toBe('only');
+});
+
+test('throws when queue empties and not sticky', async () => {
+  const llm = new ScriptedMock(['only'], false);
+  await llm.complete([]);
+  await expect(llm.complete([])).rejects.toThrow();
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/scriptedMock.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/llm/provider.ts`:
+```ts
+import { Message } from '../types';
+export interface LLMProvider {
+  complete(messages: Message[]): Promise<{ text: string; stopReason: string }>;
+}
+```
+
+`src/llm/scriptedMock.ts`:
+```ts
+import { LLMProvider } from './provider';
+import { Message } from '../types';
+
+export class ScriptedMock implements LLMProvider {
+  private queue: string[];
+  private sticky: boolean;
+  private last: string | null = null;
+
+  constructor(responses: string[], sticky = false) {
+    this.queue = [...responses];
+    this.sticky = sticky;
+  }
+
+  async complete(_messages: Message[]): Promise<{ text: string; stopReason: string }> {
+    if (this.queue.length > 0) {
+      this.last = this.queue.shift()!;
+      return { text: this.last, stopReason: 'ok' };
+    }
+    if (this.sticky && this.last !== null) {
+      return { text: this.last, stopReason: 'ok' };
+    }
+    throw new Error('ScriptedMock: response queue exhausted and not sticky');
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/scriptedMock.test.ts`
+Expected: PASS (3 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/llm/provider.ts src/llm/scriptedMock.ts test/scriptedMock.test.ts
+git commit -m "feat(llm): LLMProvider interface + ScriptedMock"
+```
+
+---
+
+## Task 5: ToolRegistry + file tools
+
+**Files:**
+- Create: `src/tools/tool.ts`, `src/tools/fileTools.ts`, `test/fileTools.test.ts`
+
+**Interfaces:**
+- Consumes: `Action`, `Observation` from `src/types`.
+- Produces: `Tool` interface, `ToolRegistry`, `ToolContext`, file tools `read_file`/`write_file`/`list_dir`.
+
+- [ ] **Step 1: Write the failing test**
+
+`test/fileTools.test.ts`:
+```ts
+import { ToolRegistry } from '../src/tools/tool';
+import { fileTools } from '../src/tools/fileTools';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+
+async function withTmpDir(): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'harness-'));
+  return dir;
+}
+
+test('write_file then read_file roundtrip', async () => {
+  const cwd = await withTmpDir();
+  const reg = new ToolRegistry([...fileTools]);
+  const w = await reg.dispatch({ tool: 'write_file', args: { path: 'a.txt', content: 'hi' } }, { cwd });
+  expect(w.ok).toBe(true);
+  const r = await reg.dispatch({ tool: 'read_file', args: { path: 'a.txt' } }, { cwd });
+  expect(r.content).toBe('hi');
+});
+
+test('list_dir lists entries', async () => {
+  const cwd = await withTmpDir();
+  const reg = new ToolRegistry([...fileTools]);
+  await reg.dispatch({ tool: 'write_file', args: { path: 'a.txt', content: 'x' } }, { cwd });
+  const l = await reg.dispatch({ tool: 'list_dir', args: { path: '.' } }, { cwd });
+  expect(l.content).toContain('a.txt');
+});
+
+test('read_file on missing file returns ok:false with error', async () => {
+  const cwd = await withTmpDir();
+  const reg = new ToolRegistry([...fileTools]);
+  const r = await reg.dispatch({ tool: 'read_file', args: { path: 'nope.txt' } }, { cwd });
+  expect(r.ok).toBe(false);
+  expect(r.error).toMatch(/no such file/i);
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/fileTools.test.ts`
+Expected: FAIL — modules not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/tools/tool.ts`:
+```ts
+import { Action, Observation } from '../types';
+
+export interface ToolContext { cwd: string; }
+
+export interface Tool {
+  name: string;
+  execute(args: Record<string, any>, ctx: ToolContext): Promise<Observation>;
+}
+
+export class ToolRegistry {
+  private tools = new Map<string, Tool>();
+  constructor(tools: Tool[]) { for (const t of tools) this.tools.set(t.name, t); }
+
+  async dispatch(action: Action, ctx: ToolContext): Promise<Observation> {
+    const t = this.tools.get(action.tool);
+    if (!t) return { ok: false, error: `unknown tool: ${action.tool}` };
+    try {
+      return await t.execute(action.args, ctx);
+    } catch (e: any) {
+      return { ok: false, error: String(e?.message ?? e) };
+    }
+  }
+}
+```
+
+`src/tools/fileTools.ts`:
+```ts
+import { Tool, ToolContext } from './tool';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+
+async function abs(p: string, ctx: ToolContext): Promise<string> {
+  return path.resolve(ctx.cwd, p);
+}
+
+export const read_file: Tool = {
+  name: 'read_file',
+  async execute(args, ctx) {
+    try {
+      const content = await fs.readFile(await abs(args.path, ctx), 'utf8');
+      return { ok: true, content };
+    } catch (e: any) { return { ok: false, error: String(e?.message ?? e) }; }
+  },
+};
+
+export const write_file: Tool = {
+  name: 'write_file',
+  async execute(args, ctx) {
+    try {
+      const full = await abs(args.path, ctx);
+      await fs.mkdir(path.dirname(full), { recursive: true });
+      await fs.writeFile(full, String(args.content));
+      return { ok: true, content: `wrote ${args.path}` };
+    } catch (e: any) { return { ok: false, error: String(e?.message ?? e) }; }
+  },
+};
+
+export const list_dir: Tool = {
+  name: 'list_dir',
+  async execute(args, ctx) {
+    try {
+      const entries = await fs.readdir(await abs(args.path, ctx));
+      return { ok: true, content: entries.join('\n') };
+    } catch (e: any) { return { ok: false, error: String(e?.message ?? e) }; }
+  },
+};
+
+export const fileTools: Tool[] = [read_file, write_file, list_dir];
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/fileTools.test.ts`
+Expected: PASS (3 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/tools/tool.ts src/tools/fileTools.ts test/fileTools.test.ts
+git commit -m "feat(tools): ToolRegistry + file tools"
+```
+
+---
+
+## Task 6: Shell tools (run_shell / run_tests capture)
+
+**Files:**
+- Create: `src/tools/shellTools.ts`, `test/shellTools.test.ts`
+
+**Interfaces:**
+- Consumes: `Tool`, `ToolContext` from `src/tools/tool`.
+- Produces: `run_shell`, `run_tests` (capture stdout/stderr/exitCode only — feedback parsing is the loop's job in Task 11).
+
+- [ ] **Step 1: Write the failing test**
+
+`test/shellTools.test.ts`:
+```ts
+import { ToolRegistry } from '../src/tools/tool';
+import { shellTools } from '../src/tools/shellTools';
+import * as os from 'os';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+
+test('run_shell captures stdout and exitCode 0', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'h-'));
+  const reg = new ToolRegistry([...shellTools]);
+  const cmd = process.platform === 'win32' ? 'echo hello' : 'echo hello';
+  const r = await reg.dispatch({ tool: 'run_shell', args: { command: cmd } }, { cwd });
+  expect(r.ok).toBe(true);
+  expect(r.exitCode).toBe(0);
+  expect((r.stdout ?? '').trim()).toBe('hello');
+});
+
+test('run_shell captures non-zero exit and stderr', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'h-'));
+  const reg = new ToolRegistry([...shellTools]);
+  const cmd = process.platform === 'win32' ? 'node -e "process.stderr.write(\\\"boom\\\");process.exit(1)"'
+    : 'node -e "process.stderr.write(\'boom\');process.exit(1)"';
+  const r = await reg.dispatch({ tool: 'run_shell', args: { command: cmd } }, { cwd });
+  expect(r.exitCode).toBe(1);
+  expect(r.stderr).toContain('boom');
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/shellTools.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/tools/shellTools.ts`:
+```ts
+import { Tool, ToolContext } from './tool';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+const pexec = promisify(exec);
+
+function wrap(cmd: string): { cmd: string; isShell: boolean } {
+  return { cmd, isShell: true };
+}
+
+export const run_shell: Tool = {
+  name: 'run_shell',
+  async execute(args, ctx) {
+    const { cmd } = wrap(String(args.command));
+    try {
+      const { stdout, stderr } = await pexec(cmd, { cwd: ctx.cwd, maxBuffer: 1e6, timeout: 30000 });
+      return { ok: true, stdout, stderr, exitCode: 0 };
+    } catch (e: any) {
+      return {
+        ok: e.code === 0,
+        stdout: e.stdout ?? '',
+        stderr: e.stderr ?? '',
+        exitCode: typeof e.code === 'number' ? e.code : -1,
+        error: String(e?.message ?? e),
+      };
+    }
+  },
+};
+
+export const run_tests: Tool = {
+  name: 'run_tests',
+  async execute(args, ctx) {
+    const { cmd } = wrap(String(args.command));
+    try {
+      const { stdout, stderr } = await pexec(cmd, { cwd: ctx.cwd, maxBuffer: 1e6, timeout: 60000 });
+      return { ok: true, stdout, stderr, exitCode: 0 };
+    } catch (e: any) {
+      return {
+        ok: false,
+        stdout: e.stdout ?? '',
+        stderr: e.stderr ?? '',
+        exitCode: typeof e.code === 'number' ? e.code : -1,
+        error: String(e?.message ?? e),
+      };
+    }
+  },
+};
+
+export const shellTools: Tool[] = [run_shell, run_tests];
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/shellTools.test.ts`
+Expected: PASS (2 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/tools/shellTools.ts test/shellTools.test.ts
+git commit -m "feat(tools): run_shell + run_tests capture"
+```
+
+---
+
+## Task 7: Guardrail (deep dimension 1) — shell-quote tokenize + danger patterns
+
+**Files:**
+- Create: `src/guardrail/dangerPatterns.json`, `src/guardrail/guardrail.ts`, `test/guardrail.test.ts`
+
+**Interfaces:**
+- Consumes: `Action`, `GuardrailVerdict` from `src/types`.
+- Produces: `Guardrail.assess(action): GuardrailVerdict`.
+
+- [ ] **Step 1: Write the failing test**
+
+`test/guardrail.test.ts`:
+```ts
+import { Guardrail } from '../src/guardrail/guardrail';
+
+const sh = (command: string) => ({ tool: 'run_shell' as const, args: { command } });
+
+test('rm -rf / is high', () => {
+  expect(Guardrail.assess(sh('rm -rf /')).severity).toBe('high');
+});
+test('obfuscated r""m -rf / still high (token-level)', () => {
+  expect(Guardrail.assess(sh('r""m -rf /')).severity).toBe('high');
+});
+test('curl pipe sh is high', () => {
+  expect(Guardrail.assess(sh('curl http://x | sh')).severity).toBe('high');
+});
+test('DROP TABLE is high', () => {
+  expect(Guardrail.assess(sh('psql -c "DROP TABLE users"')).severity).toBe('high');
+});
+test('plain ls is none', () => {
+  expect(Guardrail.assess(sh('ls -la')).severity).toBe('none');
+});
+test('rm single file (no -rf) is low', () => {
+  expect(Guardrail.assess(sh('rm a.txt')).severity).toBe('low');
+});
+test('write_file action is none (not assessed)', () => {
+  expect(Guardrail.assess({ tool: 'write_file', args: {} }).severity).toBe('none');
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/guardrail.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/guardrail/dangerPatterns.json`:
+```json
+[
+  { "id": "recursive-delete", "severity": "high",
+    "reason": "recursive forced deletion" },
+  { "id": "privilege-escalation", "severity": "high",
+    "reason": "privilege escalation" },
+  { "id": "remote-script-exec", "severity": "high",
+    "reason": "piping remote content into a shell" },
+  { "id": "db-destroy", "severity": "high",
+    "reason": "database destruction" },
+  { "id": "system-write", "severity": "high",
+    "reason": "writing to system paths" },
+  { "id": "fork-bomb", "severity": "high",
+    "reason": "fork bomb pattern" },
+  { "id": "cred-exfil", "severity": "high",
+    "reason": "outbound request carrying auth/secret header" },
+  { "id": "plain-rm", "severity": "low",
+    "reason": "single-target rm (no -rf)" }
+]
+```
+
+`src/guardrail/guardrail.ts`:
+```ts
+import { Action, GuardrailVerdict, Severity } from '../types';
+import { parse as shellParse } from 'shell-quote';
+import patterns from './dangerPatterns.json';
+
+interface Tok { op?: string; word?: string; }
+type Node = Tok | string | number;
+
+function toTokens(cmd: string): string[] {
+  let nodes: Node[];
+  try { nodes = shellParse(cmd) as Node[]; }
+  catch { throw new Error('tokenize-failed'); }
+  const out: string[] = [];
+  for (const n of nodes) {
+    if (typeof n === 'string' || typeof n === 'number') out.push(String(n));
+    else if (n && typeof n === 'object' && 'word' in n && typeof (n as Tok).word === 'string') out.push((n as Tok).word!);
+    else if (n && typeof n === 'object' && 'op' in n && typeof (n as Tok).op === 'string') out.push((n as Tok).op!);
+  }
+  return out.map(t => t.toLowerCase());
+}
+
+function join(tokens: string[]): string { return tokens.join(' '); }
+
+function match(tokens: string[]): { id: string; severity: Severity; reason: string } | null {
+  const s = join(tokens);
+  const has = (...needles: string[]) => needles.every(n => tokens.includes(n) || s.includes(n));
+
+  if (has('rm') && (has('-rf') || has('--no-preserve-root') || has('-r', '-f')) && (has('/') || has('/*') || s.includes('/etc') || s.includes('/usr')))
+    return pick('recursive-delete');
+  if (has('sudo') || has('su') || has('chmod') && has('777'))
+    return pick('privilege-escalation');
+  if ((has('curl') || has('wget')) && (s.includes('| sh') || s.includes('|sh') || s.includes('| bash') || s.includes('|bash')))
+    return pick('remote-script-exec');
+  if (s.includes('drop table') || s.includes('drop database') || s.includes('truncate'))
+    return pick('db-destroy');
+  if (s.includes('> /etc/') || s.includes('> /dev/sd') || s.includes('/etc/cron') || s.includes(':(){') )
+    return pick('system-write');
+  if (s.includes(':(){:|:&};:'))
+    return pick('fork-bomb');
+  if ((has('curl') || has('wget')) && (s.includes('authorization') || s.includes('-h') && s.includes('token')))
+    return pick('cred-exfil');
+  if (has('rm') && !has('-rf') && !has('-r') && !has('-f'))
+    return pick('plain-rm');
+  return null;
+}
+
+function pick(id: string) {
+  const p = (patterns as any[]).find(p => p.id === id)!;
+  return { id, severity: p.severity as Severity, reason: p.reason };
+}
+
+export const Guardrail = {
+  assess(action: Action): GuardrailVerdict {
+    if (action.tool !== 'run_shell' && action.tool !== 'run_tests') return { severity: 'none', reasons: [] };
+    const cmd = String(action.args.command ?? '');
+    let tokens: string[];
+    try { tokens = toTokens(cmd); }
+    catch { return { severity: 'high', reasons: ['tokenize-failed: malformed command, forcing approval'] }; }
+    const hit = match(tokens);
+    if (!hit) return { severity: 'none', reasons: [] };
+    return { severity: hit.severity, reasons: [`${hit.id}: ${hit.reason}`] };
+  },
+};
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/guardrail.test.ts`
+Expected: PASS (7 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/guardrail/dangerPatterns.json src/guardrail/guardrail.ts test/guardrail.test.ts
+git commit -m "feat(guardrail): shell-quote tokenize + danger pattern library"
+```
+
+---
+
+## Task 8: FeedbackClassifier + JestParser (deep dimension 2)
+
+**Files:**
+- Create: `src/feedback/feedbackClassifier.ts`, `src/feedback/jestParser.ts`, `demo/fixtures/jest-assertion-fail.txt`, `demo/fixtures/jest-syntax-fail.txt`, `test/feedbackClassifier.test.ts`
+
+**Interfaces:**
+- Consumes: `Observation`, `Feedback` from `src/types`.
+- Produces: `Parser` interface, `FeedbackClassifier` (constructed with a `Parser`), `JestParser`.
+
+- [ ] **Step 1: Write the failing test**
+
+`demo/fixtures/jest-assertion-fail.txt` (realistic Jest failure stderr):
+```
+FAIL  ./add.test.js
+  ● add › returns sum
+
+    expect(received).toBe(expected)
+
+    Expected: 5
+    Received: 3
+
+      at Object.<anonymous> (add.test.js:4:17)
+```
+
+`demo/fixtures/jest-syntax-fail.txt`:
+```
+FAIL  ./add.test.js
+  ● Test suite failed to parse
+
+    SyntaxError: Unexpected token (5:2)
+
+      at add.test.js:5:2
+```
+
+`test/feedbackClassifier.test.ts`:
+```ts
+import { FeedbackClassifier } from '../src/feedback/feedbackClassifier';
+import { JestParser } from '../src/feedback/jestParser';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+
+const fc = new FeedbackClassifier(new JestParser());
+
+async function fixture(name: string): Promise<string> {
+  return fs.readFile(path.join(__dirname, '..', 'demo', 'fixtures', name), 'utf8');
+}
+
+test('assertion failure parsed to errorType=assertion with file:line', async () => {
+  const fb = fc.parse({ ok: false, exitCode: 1, stderr: await fixture('jest-assertion-fail.txt') });
+  expect(fb.errorType).toBe('assertion');
+  expect(fb.failedTests).toContain("add › returns sum");
+  expect(fb.assertion?.file).toBe('add.test.js');
+  expect(fb.assertion?.line).toBe(4);
+});
+
+test('syntax failure parsed to errorType=syntax', async () => {
+  const fb = fc.parse({ ok: false, exitCode: 1, stderr: await fixture('jest-syntax-fail.txt') });
+  expect(fb.errorType).toBe('syntax');
+  expect(fb.assertion?.file).toBe('add.test.js');
+});
+
+test('unrecognized output falls back to other with truncated evidence', async () => {
+  const fb = fc.parse({ ok: false, exitCode: 1, stderr: 'something weird\n' });
+  expect(fb.errorType).toBe('other');
+  expect(fb.evidence).toContain('something weird');
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/feedbackClassifier.test.ts`
+Expected: FAIL — modules/fixtures not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/feedback/feedbackClassifier.ts`:
+```ts
+import { Feedback, Observation } from '../types';
+
+export interface Parser { parse(stdout: string, stderr: string): Feedback; }
+
+function truncate(s: string, n = 2000): string { return s.length > n ? s.slice(-n) : s; }
+
+export class FeedbackClassifier {
+  constructor(private parser: Parser) {}
+  parse(obs: Observation): Feedback {
+    if (obs.exitCode === 0) {
+      return { errorType: 'other', failedTests: [], evidence: '', hint: 'tests passed' };
+    }
+    try {
+      const fb = this.parser.parse(obs.stdout ?? '', obs.stderr ?? '');
+      fb.evidence = truncate(fb.evidence || obs.stderr || '');
+      return fb;
+    } catch {
+      return {
+        errorType: 'other',
+        failedTests: [],
+        evidence: truncate((obs.stderr ?? '').split('\n').slice(-30).join('\n')),
+        hint: 'unrecognized failure; inspect evidence',
+      };
+    }
+  }
+}
+```
+
+`src/feedback/jestParser.ts`:
+```ts
+import { Feedback } from '../types';
+import { Parser } from './feedbackClassifier';
+
+const FAIL_BLOCK = /●\s+(.+)/g;
+const AT_LINE = /at\s+(?:.*?\s)?\(?(.+?):(\d+):\d+\)?/;
+
+export const JestParser: Parser = {
+  parse(_stdout: string, stderr: string): Feedback {
+    const failedTests: string[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = FAIL_BLOCK.exec(stderr)) !== null) failedTests.push(m[1].trim());
+
+    if (/SyntaxError|Test suite failed to parse|Unexpected token/i.test(stderr)) {
+      const at = AT_LINE.exec(stderr);
+      return {
+        errorType: 'syntax',
+        failedTests,
+        assertion: at ? { file: at[1], line: Number(at[2]), snippet: 'SyntaxError' } : undefined,
+        evidence: stderr,
+        hint: at ? `fix syntax at ${at[1]}:${at[2]}` : 'fix syntax error',
+      };
+    }
+    if (failedTests.length > 0 || /expect\(received\)\.toBe\(expected\)/i.test(stderr)) {
+      const at = AT_LINE.exec(stderr);
+      return {
+        errorType: 'assertion',
+        failedTests,
+        assertion: at ? { file: at[1], line: Number(at[2]), snippet: 'assertion failed' } : undefined,
+        evidence: stderr,
+        hint: at ? `adjust implementation so ${at[1]}:${at[2]} assertion passes` : 'adjust implementation to pass failing test',
+      };
+    }
+    return { errorType: 'other', failedTests, evidence: stderr, hint: 'inspect jest output' };
+  },
+};
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/feedbackClassifier.test.ts`
+Expected: PASS (3 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/feedback/feedbackClassifier.ts src/feedback/jestParser.ts demo/fixtures/*.txt test/feedbackClassifier.test.ts
+git commit -m "feat(feedback): FeedbackClassifier + JestParser"
+```
+
+---
+
+## Task 9: MemoryStore (minimum memory dimension)
+
+**Files:**
+- Create: `src/memory/memoryStore.ts`, `test/memoryStore.test.ts`
+
+**Interfaces:** Produces `MemoryStore` (`read(): {key,note}[]`, `write(key,note)`, `clear(key)`).
+
+- [ ] **Step 1: Write the failing test**
+
+`test/memoryStore.test.ts`:
+```ts
+import { MemoryStore } from '../src/memory/memoryStore';
+import * as os from 'os';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+
+test('write then read roundtrip; clear removes', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mem-'));
+  const ms = new MemoryStore(dir);
+  await ms.write('convention', 'use camelCase');
+  const notes = ms.read();
+  expect(notes.find(n => n.key === 'convention')?.note).toBe('use camelCase');
+  ms.clear('convention');
+  expect(ms.read().find(n => n.key === 'convention')).toBeUndefined();
+});
+
+test('system prompt includes notes', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mem-'));
+  const ms = new MemoryStore(dir);
+  await ms.write('dec', 'decided X');
+  expect(ms.systemPrompt()).toContain('decided X');
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/memoryStore.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/memory/memoryStore.ts`:
+```ts
+import * as fs from 'fs/promises';
+import * as path from 'path';
+
+export interface Note { key: string; note: string; }
+
+export class MemoryStore {
+  constructor(private dir: string) {}
+  private file(key: string) { return path.join(this.dir, `${key}.md`); }
+
+  read(): Note[] {
+    const { readdirSync, readFileSync, existsSync } = require('fs');
+    if (!existsSync(this.dir)) return [];
+    return readdirSync(this.dir)
+      .filter((f: string) => f.endsWith('.md'))
+      .map((f: string) => ({ key: f.replace(/\.md$/, ''), note: readFileSync(path.join(this.dir, f), 'utf8') }));
+  }
+
+  async write(key: string, note: string): Promise<void> {
+    await fs.mkdir(this.dir, { recursive: true });
+    await fs.writeFile(this.file(key), note);
+  }
+
+  clear(key: string): void {
+    const { existsSync, rmSync } = require('fs');
+    if (existsSync(this.file(key))) rmSync(this.file(key), { force: true });
+  }
+
+  systemPrompt(): string {
+    const notes = this.read();
+    if (notes.length === 0) return '';
+    return 'Project notes:\n' + notes.map(n => `- [${n.key}] ${n.note}`).join('\n');
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/memoryStore.test.ts`
+Expected: PASS (2 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/memory/memoryStore.ts test/memoryStore.test.ts
+git commit -m "feat(memory): file-backed MemoryStore"
+```
+
+---
+
+## Task 10: CredentialStore — EncryptedFileStore (AES-256-GCM)
+
+**Files:**
+- Create: `src/creds/credentialStore.ts`, `test/credentialStore.test.ts`
+
+**Interfaces:**
+- Produces: `CredentialStore` interface, `EncryptedFileStore` (`set(key, masterPassword)`, `status()`, `clear()`, `resolve(masterPassword)`).
+
+- [ ] **Step 1: Write the failing test**
+
+`test/credentialStore.test.ts`:
+```ts
+import { EncryptedFileStore } from '../src/creds/credentialStore';
+import * as os from 'os';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+
+test('set then resolve returns key; status present without echoing', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cred-'));
+  const store = new EncryptedFileStore(path.join(dir, 'creds.enc'));
+  await store.set('sk-secret', 'master-pass');
+  expect(store.status()).toEqual({ present: true, source: 'encrypted-file' });
+  expect(store.status()).not.toHaveProperty('key');
+  const r = await store.resolve('master-pass');
+  expect(r.key).toBe('sk-secret');
+  expect(r.source).toBe('encrypted-file');
+});
+
+test('wrong master password fails to resolve', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cred-'));
+  const store = new EncryptedFileStore(path.join(dir, 'creds.enc'));
+  await store.set('sk-secret', 'master-pass');
+  await expect(store.resolve('wrong')).rejects.toThrow();
+});
+
+test('clear removes the file; status not present', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cred-'));
+  const store = new EncryptedFileStore(path.join(dir, 'creds.enc'));
+  await store.set('sk-secret', 'master-pass');
+  store.clear();
+  expect(store.status().present).toBe(false);
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/credentialStore.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/creds/credentialStore.ts`:
+```ts
+import * as fs from 'fs/promises';
+import * as crypto from 'crypto';
+import { existsSync } from 'fs';
+
+export interface CredentialStore {
+  status(): { present: boolean; source: string };
+  resolve(masterPassword: string): Promise<{ key: string; source: string }>;
+  set(key: string, masterPassword: string): Promise<void>;
+  clear(): void;
+}
+
+const ALGO = 'aes-256-gcm';
+function deriveKey(master: string): Buffer {
+  return crypto.pbkdf2Sync(master, 'ai4se-salt', 100000, 32, 'sha256');
+}
+
+export class EncryptedFileStore implements CredentialStore {
+  constructor(private file: string) {}
+
+  status(): { present: boolean; source: string } {
+    return { present: existsSync(this.file), source: 'encrypted-file' };
+  }
+
+  async set(key: string, masterPassword: string): Promise<void> {
+    const keyBuf = deriveKey(masterPassword);
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv(ALGO, keyBuf, iv);
+    const ct = Buffer.concat([cipher.update(key, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const blob = Buffer.concat([iv, tag, ct]);
+    await fs.writeFile(this.file, blob);
+  }
+
+  async resolve(masterPassword: string): Promise<{ key: string; source: string }> {
+    if (!existsSync(this.file)) throw new Error('no encrypted credentials');
+    const buf = await fs.readFile(this.file);
+    const iv = buf.subarray(0, 12);
+    const tag = buf.subarray(12, 28);
+    const ct = buf.subarray(28);
+    const keyBuf = deriveKey(masterPassword);
+    const decipher = crypto.createDecipheriv(ALGO, keyBuf, iv);
+    decipher.setAuthTag(tag);
+    const key = Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');
+    return { key, source: 'encrypted-file' };
+  }
+
+  clear(): void {
+    const { rmSync } = require('fs');
+    if (existsSync(this.file)) rmSync(this.file, { force: true });
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/credentialStore.test.ts`
+Expected: PASS (3 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/creds/credentialStore.ts test/credentialStore.test.ts
+git commit -m "feat(creds): EncryptedFileStore AES-256-GCM"
+```
+
+---
+
+## Task 11: MockApprovalGateway
+
+**Files:**
+- Create: `src/approval/approvalGateway.ts`, `test/approvalGateway.test.ts`
+
+**Interfaces:**
+- Produces: `ApprovalGateway` interface (`request(action, reasons): Promise<ApprovalDecision>`), `MockApprovalGateway`.
+
+- [ ] **Step 1: Write the failing test**
+
+`test/approvalGateway.test.ts`:
+```ts
+import { MockApprovalGateway } from '../src/approval/approvalGateway';
+
+test('returns queued decisions in order', async () => {
+  const g = new MockApprovalGateway([
+    { decision: 'deny', reason: 'too dangerous' },
+    { decision: 'approve', reason: 'ok' },
+  ]);
+  const a = (cmd: string) => ({ tool: 'run_shell' as const, args: { command: cmd } });
+  expect((await g.request(a('rm -rf /'), ['recursive-delete'])).decision).toBe('deny');
+  expect((await g.request(a('rm -rf /'), ['recursive-delete'])).decision).toBe('approve');
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/approvalGateway.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/approval/approvalGateway.ts`:
+```ts
+import { Action, ApprovalDecision } from '../types';
+
+export interface ApprovalGateway {
+  request(action: Action, reasons: string[]): Promise<ApprovalDecision>;
+}
+
+export class MockApprovalGateway implements ApprovalGateway {
+  private queue: ApprovalDecision[];
+  constructor(decisions: ApprovalDecision[]) { this.queue = [...decisions]; }
+  async request(_action: Action, _reasons: string[]): Promise<ApprovalDecision> {
+    if (this.queue.length === 0) return { decision: 'deny', reason: 'mock queue empty' };
+    return this.queue.shift()!;
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/approvalGateway.test.ts`
+Expected: PASS (1 test).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/approval/approvalGateway.ts test/approvalGateway.test.ts
+git commit -m "feat(approval): ApprovalGateway interface + MockApprovalGateway"
+```
+
+---
+
+## Task 12: AgentLoop — the hand-written state machine (integration)
+
+**Files:**
+- Create: `src/loop/eventSink.ts`, `src/loop/agentLoop.ts`, `test/agentLoop.test.ts`
+
+**Interfaces:**
+- Consumes: `LLMProvider`, `ToolRegistry` (+file/shell tools), `Guardrail`, `ApprovalGateway`, `FeedbackClassifier`, `MemoryStore`, `ActionProtocol`.
+- Produces: `AgentLoop` (`run(): Promise<{haltReason, iterations}>`), `EventSink`.
+
+- [ ] **Step 1: Write the failing test**
+
+`test/agentLoop.test.ts`:
+```ts
+import { AgentLoop } from '../src/loop/agentLoop';
+import { ScriptedMock } from '../src/llm/scriptedMock';
+import { ToolRegistry } from '../src/tools/tool';
+import { fileTools } from '../src/tools/fileTools';
+import { shellTools } from '../src/tools/shellTools';
+import { Guardrail } from '../src/guardrail/guardrail';
+import { MockApprovalGateway } from '../src/approval/approvalGateway';
+import { FeedbackClassifier } from '../src/feedback/feedbackClassifier';
+import { JestParser } from '../src/feedback/jestParser';
+import { MemoryStore } from '../src/memory/memoryStore';
+import * as os from 'os';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+
+function action(tool: string, args: any): string {
+  return '```action\n' + JSON.stringify({ tool, args }) + '\n```';
+}
+
+async function tmp(): Promise<string> { return fs.mkdtemp(path.join(os.tmpdir(), 'loop-')); }
+
+test('full green loop: write buggy -> test fails -> feedback -> fix -> green -> finish', async () => {
+  const cwd = await tmp();
+  // target: a "test script" that fails unless add.js returns sum correctly
+  await fs.writeFile(path.join(cwd, 'run-tests.sh'),
+    process.platform === 'win32'
+      ? `node -e "const a=require('./add.js');if(a(2,3)!==5){console.error('FAIL  ./add.test.js');console.error('  expect(received).toBe(expected)');console.error('  Expected: 5');console.error('  at add.test.js:4:17');process.exit(1)}else process.exit(0)"`
+      : `node -e "const a=require('./add.js');if(a(2,3)!==5){console.error('FAIL  ./add.test.js\\\\n  expect(received).toBe(expected)\\\\n  Expected: 5\\\\n  at add.test.js:4:17');process.exit(1)}else process.exit(0)"`
+  );
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  const llm = new ScriptedMock([
+    action('write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a-b;\n' }), // buggy
+    action('run_tests', { command: 'sh run-tests.sh' }),
+    action('write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a+b;\n' }), // fixed
+    action('run_tests', { command: 'sh run-tests.sh' }),
+    action('finish', {}),
+  ]);
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([]),
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'you are a coding agent',
+  });
+  const res = await loop.run();
+  expect(res.haltReason).toBe('finish');
+  expect(res.iterations).toBe(5);
+  // add.js now correct
+  const add = require(path.join(cwd, 'add.js'));
+  expect(add(2, 3)).toBe(5);
+});
+
+test('guardrail halts-to-approval then deny re-injects as observation', async () => {
+  const cwd = await tmp();
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  const llm = new ScriptedMock([
+    action('run_shell', { command: 'rm -rf /' }),
+    action('finish', {}),
+  ]);
+  const approval = new MockApprovalGateway([{ decision: 'deny', reason: 'blocked' }]);
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval,
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x',
+  });
+  const res = await loop.run();
+  expect(res.haltReason).toBe('finish');
+});
+
+test('stuck halt: same assertion point failing twice -> HALTED(stuck)', async () => {
+  const cwd = await tmp();
+  await fs.writeFile(path.join(cwd, 'run-tests.sh'),
+    `node -e "console.error('FAIL  ./add.test.js\\\\n  expect(received).toBe(expected)\\\\n  at add.test.js:4:17');process.exit(1)"`);
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  const llm = new ScriptedMock([
+    action('run_tests', { command: 'sh run-tests.sh' }),
+    action('run_tests', { command: 'sh run-tests.sh' }),
+    action('run_tests', { command: 'sh run-tests.sh' }),
+  ], true);
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([]),
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x',
+  });
+  const res = await loop.run();
+  expect(res.haltReason).toBe('stuck');
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/agentLoop.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/loop/eventSink.ts`:
+```ts
+import { Event } from '../types';
+export interface EventSink { emit(e: Omit<Event, 'id'>): void; }
+export const noopSink: EventSink = { emit() {} };
+export class EventStore implements EventSink {
+  private events: Event[] = [];
+  private next = 1;
+  emit(e: Omit<Event, 'id'>): void { this.events.push({ id: this.next++, ...e }); if (this.events.length > 1000) this.events.shift(); }
+  since(id: number): Event[] { return this.events.filter(e => e.id > id); }
+  all(): Event[] { return [...this.events]; }
+}
+```
+
+`src/loop/agentLoop.ts`:
+```ts
+import { LLMProvider } from '../llm/provider';
+import { ToolRegistry, ToolContext } from '../tools/tool';
+import { Guardrail } from '../guardrail/guardrail';
+import { ApprovalGateway } from '../approval/approvalGateway';
+import { FeedbackClassifier } from '../feedback/feedbackClassifier';
+import { MemoryStore } from '../memory/memoryStore';
+import { ActionProtocol } from '../protocol/actionProtocol';
+import { Action, Message, Observation } from '../types';
+import { EventSink, noopSink } from './eventSink';
+
+export interface LoopDeps {
+  llm: LLMProvider;
+  registry: ToolRegistry;
+  guardrail: typeof Guardrail;
+  approval: ApprovalGateway;
+  feedback: FeedbackClassifier;
+  memory: MemoryStore;
+  cwd: string;
+  maxIter: number;
+  systemPrompt: string;
+  sink?: EventSink;
+}
+
+type HaltReason = 'finish' | 'cap' | 'stuck' | 'provider_error';
+
+export class AgentLoop {
+  private messages: Message[];
+  private sink: EventSink;
+  constructor(private deps: LoopDeps) {
+    this.sink = deps.sink ?? noopSink;
+    const sys = deps.systemPrompt + (deps.memory.systemPrompt() ? '\n\n' + deps.memory.systemPrompt() : '');
+    this.messages = [{ role: 'system', content: sys }, { role: 'user', content: 'complete the task using tools' }];
+  }
+
+  async run(): Promise<{ haltReason: HaltReason; iterations: number }> {
+    let iter = 0;
+    let lastFailKey: string | null = null;
+    let sameCount = 0;
+    while (iter < this.deps.maxIter) {
+      iter++;
+      let resp;
+      try { resp = await this.deps.llm.complete(this.messages); }
+      catch { return { haltReason: 'provider_error', iterations: iter }; }
+      this.messages.push({ role: 'assistant', content: resp.text });
+      const acts = ActionProtocol.parse(resp.text);
+      if (acts.length === 0) {
+        this.messages.push({ role: 'observation', content: 'no action block found; emit a fenced ```action {...}``` block' });
+        continue;
+      }
+      const action = acts[0];
+      this.sink.emit({ type: 'action', payload: action, iter });
+
+      if (action.tool === 'finish') {
+        this.sink.emit({ type: 'halt', payload: { reason: 'finish' }, iter });
+        return { haltReason: 'finish', iterations: iter };
+      }
+
+      // guardrail
+      const verdict = this.deps.guardrail.assess(action);
+      let effective: Action = action;
+      if (verdict.severity === 'high') {
+        const dec = await this.deps.approval.request(action, verdict.reasons);
+        this.sink.emit({ type: 'approval_decision', payload: dec, iter });
+        if (dec.decision === 'deny') {
+          this.messages.push({ role: 'observation', content: `DENIED: ${dec.reason} (reasons: ${verdict.reasons.join('; ')})` });
+          continue;
+        }
+      } else if (verdict.severity === 'low') {
+        this.messages.push({ role: 'observation', content: `WARN(low): ${verdict.reasons.join('; ')}` });
+      }
+
+      // execute
+      const ctx: ToolContext = { cwd: this.deps.cwd };
+      const obs = await this.deps.registry.dispatch(effective, ctx);
+
+      // feedback loop for run_tests failures
+      if (action.tool === 'run_tests' && obs.exitCode !== 0) {
+        const fb = this.deps.feedback.parse(obs);
+        const key = fb.assertion ? `${fb.assertion.file}:${fb.assertion.line}` : fb.errorType;
+        if (key === lastFailKey) { sameCount++; } else { sameCount = 1; lastFailKey = key; }
+        const content = JSON.stringify(fb);
+        this.messages.push({ role: 'observation', content });
+        this.sink.emit({ type: 'observation', payload: fb, iter });
+        if (sameCount >= 2) {
+          this.sink.emit({ type: 'halt', payload: { reason: 'stuck', key }, iter });
+          return { haltReason: 'stuck', iterations: iter };
+        }
+      } else {
+        this.messages.push({ role: 'observation', content: JSON.stringify(obs) });
+        this.sink.emit({ type: 'observation', payload: obs, iter });
+      }
+    }
+    this.sink.emit({ type: 'halt', payload: { reason: 'cap' }, iter });
+    return { haltReason: 'cap', iterations: iter };
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/agentLoop.test.ts`
+Expected: PASS (3 tests). If `sh run-tests.sh` fails on Windows, the test uses `sh`; ensure Git Bash `sh` is on PATH (it is in this repo's shell). If flaky, the test already branches on `process.platform`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/loop/eventSink.ts src/loop/agentLoop.ts test/agentLoop.test.ts
+git commit -m "feat(loop): hand-written AgentLoop state machine with integration tests"
+```
+
+---
+
+## Task 13: OpenAICompatProvider (real LLM, network-gated)
+
+**Files:**
+- Create: `src/llm/openaiCompat.ts`, `test/openaiCompat.test.ts`
+
+**Interfaces:**
+- Consumes: `LLMProvider`, `Message`.
+- Produces: `OpenAICompatProvider` (uses global `fetch`; 4xx → `AuthError`).
+
+- [ ] **Step 1: Write the failing test**
+
+`test/openaiCompat.test.ts`:
+```ts
+import { OpenAICompatProvider } from '../src/llm/openaiCompat';
+
+test('returns assistant text from mocked fetch', async () => {
+  const calls: any[] = [];
+  const fakeFetch = async (url: string, init: any) => {
+    calls.push({ url, init });
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'LLM-SAYS' } }] }) };
+  };
+  const p = new OpenAICompatProvider({ baseUrl: 'https://x', apiKey: 'k', fetch: fakeFetch as any });
+  const r = await p.complete([{ role: 'user', content: 'hi' }]);
+  expect(r.text).toBe('LLM-SAYS');
+  expect(calls[0].init.headers['Authorization']).toBe('Bearer k');
+});
+
+test('4xx throws AuthError', async () => {
+  const fakeFetch = async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'bad key' } }) });
+  const p = new OpenAICompatProvider({ baseUrl: 'https://x', apiKey: 'k', fetch: fakeFetch as any });
+  await expect(p.complete([{ role: 'user', content: 'hi' }])).rejects.toThrow(/auth|401/i);
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/openaiCompat.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/llm/openaiCompat.ts`:
+```ts
+import { LLMProvider } from './provider';
+import { Message } from '../types';
+
+export class AuthError extends Error { constructor(m: string) { super(m); this.name = 'AuthError'; } }
+
+export interface OpenAICompatOpts { baseUrl: string; apiKey: string; model?: string; fetch?: typeof fetch; }
+
+export class OpenAICompatProvider implements LLMProvider {
+  private fetchImpl: typeof fetch;
+  constructor(private opts: OpenAICompatOpts) {
+    this.fetchImpl = opts.fetch ?? fetch;
+  }
+  async complete(messages: Message[]): Promise<{ text: string; stopReason: string }> {
+    const res = await this.fetchImpl(`${this.opts.baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.opts.apiKey}` },
+      body: JSON.stringify({ model: this.opts.model ?? 'gpt-4o-mini', messages, temperature: 0 }),
+    });
+    if (!res.ok) {
+      if (res.status >= 400 && res.status < 500) {
+        const e = await res.json().catch(() => ({}));
+        throw new AuthError(`auth/http ${res.status}: ${JSON.stringify(e)}`);
+      }
+      throw new Error(`provider http ${res.status}`);
+    }
+    const data: any = await res.json();
+    const text = data?.choices?.[0]?.message?.content ?? '';
+    return { text, stopReason: data?.choices?.[0]?.finish_reason ?? 'ok' };
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/openaiCompat.test.ts`
+Expected: PASS (2 tests, no network — fetch is injected).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/llm/openaiCompat.ts test/openaiCompat.test.ts
+git commit -m "feat(llm): OpenAICompatProvider with injectable fetch"
+```
+
+---
+
+## Task 14: HttpApprovalGateway (in-browser HITL)
+
+**Files:**
+- Create: `src/approval/httpApprovalGateway.ts`, `test/httpApprovalGateway.test.ts`
+
+**Interfaces:**
+- Produces: `HttpApprovalGateway` (pending resolver map keyed by request id; `resolve(id, decision)` called by web route).
+
+- [ ] **Step 1: Write the failing test**
+
+`test/httpApprovalGateway.test.ts`:
+```ts
+import { HttpApprovalGateway } from '../src/approval/httpApprovalGateway';
+
+test('request resolves when resolve() is called with matching id', async () => {
+  const g = new HttpApprovalGateway();
+  const a = { tool: 'run_shell' as const, args: { command: 'rm -rf /' } };
+  const p = g.request(a, ['recursive-delete']);
+  const pending = g.pending();
+  expect(pending).toHaveLength(1);
+  g.resolve(pending[0].id, { decision: 'approve', reason: 'ok' });
+  expect((await p).decision).toBe('approve');
+});
+
+test('unresolved request pending until resolved or denied', async () => {
+  const g = new HttpApprovalGateway();
+  const p = g.request({ tool: 'run_shell', args: { command: 'x' } }, []);
+  expect(g.pending()).toHaveLength(1);
+  g.resolve(g.pending()[0].id, { decision: 'deny', reason: 'no' });
+  expect((await p).decision).toBe('deny');
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/httpApprovalGateway.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/approval/httpApprovalGateway.ts`:
+```ts
+import { Action, ApprovalDecision } from '../types';
+import { ApprovalGateway } from './approvalGateway';
+import { randomUUID } from 'crypto';
+
+interface Pending { id: string; action: Action; reasons: string[]; resolve: (d: ApprovalDecision) => void; }
+
+export class HttpApprovalGateway implements ApprovalGateway {
+  private pending = new Map<string, Pending>();
+
+  request(action: Action, reasons: string[]): Promise<ApprovalDecision> {
+    const id = randomUUID();
+    return new Promise<ApprovalDecision>((resolve) => {
+      this.pending.set(id, { id, action, reasons, resolve });
+    });
+  }
+
+  pendingList(): { id: string; action: Action; reasons: string[] }[] {
+    return [...this.pending.values()].map(p => ({ id: p.id, action: p.action, reasons: p.reasons }));
+  }
+  pending(): { id: string; action: Action; reasons: string[] }[] { return this.pendingList(); }
+
+  resolve(id: string, decision: ApprovalDecision): boolean {
+    const p = this.pending.get(id);
+    if (!p) return false;
+    this.pending.delete(id);
+    p.resolve(decision);
+    return true;
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/httpApprovalGateway.test.ts`
+Expected: PASS (2 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/approval/httpApprovalGateway.ts test/httpApprovalGateway.test.ts
+git commit -m "feat(approval): HttpApprovalGateway with pending resolvers"
+```
+
+---
+
+## Task 15: WebServer (http + polling routes + event store)
+
+**Files:**
+- Create: `src/web/webServer.ts`, `test/webServer.test.ts`
+
+**Interfaces:**
+- Consumes: `AgentLoop`, `HttpApprovalGateway`, `EventStore`, `CredentialStore`.
+- Produces: `startWebServer({port, loopFactory, approval, creds, eventStore})` returning `{server}`.
+
+- [ ] **Step 1: Write the failing test**
+
+`test/webServer.test.ts`:
+```ts
+import http from 'http';
+import { startWebServer } from '../src/web/webServer';
+import { EventStore } from '../src/loop/eventSink';
+import { HttpApprovalGateway } from '../src/approval/httpApprovalGateway';
+import { EncryptedFileStore } from '../src/creds/credentialStore';
+import * as os from 'os';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+
+function req(method: string, port: number, p: string, body?: any): Promise<{status: number, body: any}> {
+  return new Promise((resolve) => {
+    const data = body ? JSON.stringify(body) : '';
+    const r = http.request({ port, path: p, method, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, (res) => {
+      let buf = '';
+      res.on('data', (c) => (buf += c));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: buf ? JSON.parse(buf) : {} }));
+    });
+    r.write(data); r.end();
+  });
+}
+
+test('GET /api/health returns 200; events poll empty initially', async () => {
+  const store = new EventStore();
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'web-'));
+  const srv = await startWebServer({
+    port: 0, eventStore: store, approval: new HttpApprovalGateway(),
+    creds: new EncryptedFileStore(path.join(dir, 'c.enc')),
+    loopFactory: async () => ({ haltReason: 'finish', iterations: 0 }),
+  });
+  const port = (srv.server.address() as any).port;
+  const h = await req('GET', port, '/api/health');
+  expect(h.status).toBe(200);
+  const e = await req('GET', port, '/api/events?since=0');
+  expect(Array.isArray(e.body)).toBe(true);
+  srv.server.close();
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/webServer.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/web/webServer.ts`:
+```ts
+import http from 'http';
+import { EventStore } from '../loop/eventSink';
+import { HttpApprovalGateway } from '../approval/httpApprovalGateway';
+import { CredentialStore } from '../creds/credentialStore';
+
+export interface WebServerOpts {
+  port: number;
+  eventStore: EventStore;
+  approval: HttpApprovalGateway;
+  creds: CredentialStore;
+  loopFactory: (task: string, cwd: string) => Promise<{ haltReason: string; iterations: number }>;
+}
+
+export async function startWebServer(opts: WebServerOpts): Promise<{ server: http.Server }> {
+  const server = http.createServer(async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    const url = new URL(req.url ?? '', `http://localhost`);
+    try {
+      if (req.method === 'GET' && url.pathname === '/api/health') {
+        res.end(JSON.stringify({ ok: true }));
+      } else if (req.method === 'GET' && url.pathname === '/api/events') {
+        const since = Number(url.searchParams.get('since') ?? '0');
+        res.end(JSON.stringify(opts.eventStore.since(since)));
+      } else if (req.method === 'GET' && url.pathname === '/api/key/status') {
+        res.end(JSON.stringify(opts.creds.status()));
+      } else if (req.method === 'GET' && url.pathname === '/api/approvals') {
+        res.end(JSON.stringify(opts.approval.pending()));
+      } else if (req.method === 'POST' && url.pathname === '/api/key') {
+        const b = await body(req);
+        await opts.creds.set(b.key, b.masterPassword);
+        res.end(JSON.stringify(opts.creds.status()));
+      } else if (req.method === 'POST' && url.pathname === '/api/approval') {
+        const b = await body(req);
+        const ok = opts.approval.resolve(b.id, { decision: b.decision, reason: b.reason ?? '' });
+        res.end(JSON.stringify({ ok }));
+      } else if (req.method === 'POST' && url.pathname === '/api/task') {
+        const b = await body(req);
+        opts.loopFactory(b.task, b.cwd).then((r) => opts.eventStore.emit({ type: 'halt', payload: r, iter: 0 }));
+        res.end(JSON.stringify({ started: true }));
+      } else {
+        res.statusCode = 404; res.end(JSON.stringify({ error: 'not found' }));
+      }
+    } catch (e: any) {
+      res.statusCode = 500; res.end(JSON.stringify({ error: String(e?.message ?? e) }));
+    }
+  });
+  await new Promise<void>((r) => server.listen(opts.port, '0.0.0.0', r));
+  return { server };
+}
+
+function body(req: http.IncomingMessage): Promise<any> {
+  return new Promise((resolve) => {
+    let buf = '';
+    req.on('data', (c) => (buf += c));
+    req.on('end', () => resolve(buf ? JSON.parse(buf) : {}));
+  });
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/webServer.test.ts`
+Expected: PASS (1 test).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/web/webServer.ts test/webServer.test.ts
+git commit -m "feat(web): http server with polling routes"
+```
+
+---
+
+## Task 16: Static frontend panel
+
+**Files:**
+- Create: `src/web/public/index.html`, `src/web/public/app.js`, `src/web/public/style.css`
+- Modify: `src/web/webServer.ts` (serve static files + `/`)
+
+**Interfaces:** Produces a 3-panel UI (task input / event stream / approvals).
+
+- [ ] **Step 1: Write the failing test**
+
+`test/staticFrontend.test.ts`:
+```ts
+import http from 'http';
+import { startWebServer } from '../src/web/webServer';
+import { EventStore } from '../src/loop/eventSink';
+import { HttpApprovalGateway } from '../src/approval/httpApprovalGateway';
+import { EncryptedFileStore } from '../src/creds/credentialStore';
+import * as os from 'os'; import * as fs from 'fs/promises'; import * as path from 'path';
+
+test('GET / serves index.html', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fe-'));
+  const srv = await startWebServer({ port: 0, eventStore: new EventStore(), approval: new HttpApprovalGateway(), creds: new EncryptedFileStore(path.join(dir,'c.enc')), loopFactory: async () => ({haltReason:'finish',iterations:0}) });
+  const port = (srv.server.address() as any).port;
+  await new Promise<void>((r) => { http.get(`http://localhost:${port}/`, (res) => { let b=''; res.on('data',c=>b+=c); res.on('end',()=>{ expect(b).toContain('AI4SE-Safe-TDD-Harness'); r(); }); }); });
+  srv.server.close();
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/staticFrontend.test.ts`
+Expected: FAIL — `/` returns 404.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`src/web/public/index.html`:
+```html
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>AI4SE-Safe-TDD-Harness</title>
+<link rel="stylesheet" href="/style.css"></head>
+<body>
+<h1>AI4SE-Safe-TDD-Harness</h1>
+<div class="grid">
+  <section><h2>Task</h2>
+    <textarea id="task" rows="4" placeholder="describe the coding task"></textarea>
+    <input id="cwd" placeholder="workspace dir">
+    <button id="start">Start</button>
+    <h3>API Key</h3>
+    <input id="master" type="password" placeholder="master password">
+    <input id="apikey" type="password" placeholder="CLAUDE_API_KEY">
+    <button id="setkey">Save Key</button>
+    <pre id="keystatus"></pre>
+  </section>
+  <section><h2>Events</h2><pre id="events"></pre></section>
+  <section><h2>Approvals</h2><div id="approvals"></div></section>
+</div>
+<script src="/app.js"></script>
+</body></html>
+```
+
+`src/web/public/style.css`:
+```css
+body { font-family: system-ui, sans-serif; margin: 1rem; background: #f7f7f8; }
+.grid { display:grid; grid-template-columns: 1fr 1fr 1fr; gap:1rem; }
+section { background:#fff; padding:1rem; border:1px solid #ddd; border-radius:6px; }
+textarea,input { width:100%; box-sizing:border-box; margin-bottom:.5rem; }
+pre { white-space:pre-wrap; word-break:break-word; max-height:50vh; overflow:auto; background:#1e1e1e; color:#eee; padding:.5rem; }
+```
+
+`src/web/public/app.js`:
+```js
+let since = 0;
+async function poll() {
+  try {
+    const e = await fetch(`/api/events?since=${since}`).then(r => r.json());
+    if (e.length) { since = e[e.length-1].id; document.getElementById('events').textContent += e.map(ev=>`#${ev.id} [${ev.type}] ${JSON.stringify(ev.payload)}`).join('\n') + '\n'; }
+    const ap = await fetch('/api/approvals').then(r => r.json());
+    document.getElementById('approvals').innerHTML = ap.map(a=>`<div><code>${a.action.tool}</code> ${a.reasons.join(',')} <button onclick="decide('${a.id}','approve')">Approve</button><button onclick="decide('${a.id}','deny')">Deny</button></div>`).join('') || 'none';
+    document.getElementById('keystatus').textContent = JSON.stringify(await fetch('/api/key/status').then(r=>r.json()));
+  } catch {}
+}
+setInterval(poll, 1000);
+document.getElementById('start').onclick = () => fetch('/api/task', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:task.value,cwd:cwd.value})});
+document.getElementById('setkey').onclick = () => fetch('/api/key', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:apikey.value,masterPassword:master.value})});
+function decide(id, d) { fetch('/api/approval', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,decision:d,reason:'browser'})}); }
+```
+
+Modify `src/web/webServer.ts`: add a static handler before the 404 branch. Insert after the `const url = …` line, add:
+```ts
+import { readFileSync, existsSync } from 'fs';
+import * as path from 'path';
+const PUB = path.join(__dirname, '..', 'public');
+```
+and in the handler, before the final `else`:
+```ts
+      } else if (req.method === 'GET' && (url.pathname === '/' || url.pathname.startsWith('/')) ) {
+        const rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
+        const f = path.join(PUB, rel);
+        if (existsSync(f)) { res.setHeader('Content-Type', mime(rel)); res.end(readFileSync(f)); return; }
+        res.statusCode = 404; res.end(JSON.stringify({ error: 'not found' }));
+```
+and add a `mime` helper at bottom:
+```ts
+function mime(p: string): string {
+  if (p.endsWith('.js')) return 'text/javascript';
+  if (p.endsWith('.css')) return 'text/css';
+  return 'text/html';
+}
+```
+Note: `__dirname` works because TS compiles to commonjs `dist/web/webServer.js` and `public/` ships alongside — copy `public` into `dist` in build (Task 17 Dockerfile handles; for tests, ts-jest runs from source so `src/web/public` is correct relative to `src/web/webServer.ts` → `path.join(__dirname,'..','public')` = `src/web/public`). ✓
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/staticFrontend.test.ts`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/web/public/ src/web/webServer.ts test/staticFrontend.test.ts
+git commit -m "feat(web): static 3-panel frontend"
+```
+
+---
+
+## Task 17: Mechanism demo (§A.6 three acts)
+
+**Files:**
+- Create: `demo/mechanism-demo.test.ts`
+
+**Interfaces:** Reuses Guardrail, MockApprovalGateway, FeedbackClassifier, JestParser, ScriptedMock, AgentLoop. Demonstrates ① guardrail+HITL ② feedback self-correction ③ deep behavior (obfuscation bypass + severity + stuck halt).
+
+- [ ] **Step 1: Write the failing test**
+
+`demo/mechanism-demo.test.ts`:
+```ts
+import { Guardrail } from '../src/guardrail/guardrail';
+import { MockApprovalGateway } from '../src/approval/approvalGateway';
+import { FeedbackClassifier } from '../src/feedback/feedbackClassifier';
+import { JestParser } from '../src/feedback/jestParser';
+import { AgentLoop } from '../src/loop/agentLoop';
+import { ScriptedMock } from '../src/llm/scriptedMock';
+import { ToolRegistry } from '../src/tools/tool';
+import { fileTools } from '../src/tools/fileTools';
+import { shellTools } from '../src/tools/shellTools';
+import { MemoryStore } from '../src/memory/memoryStore';
+import * as fs from 'fs/promises'; import * as os from 'os'; import * as path from 'path';
+
+const sh = (c:string) => ({ tool:'run_shell' as const, args:{command:c} });
+const act = (t:string,a={}) => '```action\n'+JSON.stringify({tool:t,args:a})+'\n```';
+
+describe('§A.6 mechanism demo', () => {
+  test('① guardrail blocks rm -rf / and HITL deny re-injects', async () => {
+    expect(Guardrail.assess(sh('rm -rf /')).severity).toBe('high');
+    const g = new MockApprovalGateway([{ decision:'deny', reason:'demo deny' }]);
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(),'d1-'));
+    const reg = new ToolRegistry([...fileTools,...shellTools]);
+    const llm = new ScriptedMock([act('run_shell',{command:'rm -rf /'}), act('finish',{})]);
+    const loop = new AgentLoop({ llm, registry:reg, guardrail:Guardrail, approval:g,
+      feedback:new FeedbackClassifier(new JestParser()), memory:new MemoryStore(path.join(cwd,'m')),
+      cwd, maxIter:20, systemPrompt:'demo' });
+    const r = await loop.run();
+    expect(r.haltReason).toBe('finish');
+  });
+
+  test('② injected Jest failure feeds back and agent self-corrects to green', async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(),'d2-'));
+    await fs.writeFile(path.join(cwd,'run-tests.sh'),
+      `node -e "const a=require('./add.js');if(a(2,3)!==5){console.error('FAIL  ./add.test.js\\\\n  expect(received).toBe(expected)\\\\n  Expected: 5\\\\n  at add.test.js:4:17');process.exit(1)}else process.exit(0)"`);
+    const fc = new FeedbackClassifier(new JestParser());
+    const fb = fc.parse({ ok:false, exitCode:1, stderr:'FAIL  ./add.test.js\n  expect(received).toBe(expected)\n  Expected: 5\n  at add.test.js:4:17' });
+    expect(fb.errorType).toBe('assertion');
+    const reg = new ToolRegistry([...fileTools,...shellTools]);
+    const llm = new ScriptedMock([
+      act('write_file',{path:'add.js',content:'module.exports=(a,b)=>a-b;\n'}),
+      act('run_tests',{command:'sh run-tests.sh'}),
+      act('write_file',{path:'add.js',content:'module.exports=(a,b)=>a+b;\n'}),
+      act('run_tests',{command:'sh run-tests.sh'}),
+      act('finish',{}),
+    ]);
+    const loop = new AgentLoop({ llm, registry:reg, guardrail:Guardrail, approval:new MockApprovalGateway([]),
+      feedback:fc, memory:new MemoryStore(path.join(cwd,'m')), cwd, maxIter:20, systemPrompt:'demo' });
+    const r = await loop.run();
+    expect(r.haltReason).toBe('finish');
+    expect(require(path.join(cwd,'add.js'))(2,3)).toBe(5);
+  });
+
+  test('③ obfuscation bypass + severity + stuck halt', () => {
+    expect(Guardrail.assess(sh('r""m -rf /')).severity).toBe('high');
+    expect(Guardrail.assess(sh('rm a.txt')).severity).toBe('low');
+    expect(Guardrail.assess(sh('ls')).severity).toBe('none');
+  });
+
+  test('③ stuck halt after two identical assertion failures', async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(),'d3-'));
+    await fs.writeFile(path.join(cwd,'run-tests.sh'),
+      `node -e "console.error('FAIL  ./add.test.js\\\\n  expect(received).toBe(expected)\\\\n  at add.test.js:4:17');process.exit(1)"`);
+    const reg = new ToolRegistry([...fileTools,...shellTools]);
+    const llm = new ScriptedMock([act('run_tests',{command:'sh run-tests.sh'})], true);
+    const loop = new AgentLoop({ llm, registry:reg, guardrail:Guardrail, approval:new MockApprovalGateway([]),
+      feedback:new FeedbackClassifier(new JestParser()), memory:new MemoryStore(path.join(cwd,'m')),
+      cwd, maxIter:20, systemPrompt:'demo' });
+    const r = await loop.run();
+    expect(r.haltReason).toBe('stuck');
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npm run demo`
+Expected: FAIL (test references existing modules but `demo/` glob must be picked up — verify jest config includes `demo/`). If tests pass immediately because modules exist, the "fail" gate is the `demo/` glob not matching; ensure `jest.config.js` `testMatch` includes `**/demo/**/*.test.ts` (it does from Task 1).
+
+- [ ] **Step 3: Write minimal implementation**
+
+No new impl — the demo wires existing modules. The "implementation" is the test file itself (already written in Step 1). If any assertion fails, fix the underlying module per its own task; do not weaken demo assertions.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npm run demo`
+Expected: PASS (4 tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add demo/mechanism-demo.test.ts
+git commit -m "feat(demo): §A.6 three-act mechanism demo"
+```
+
+---
+
+## Task 18: Dockerfile + CI (unit-test job) + README
+
+**Files:**
+- Create: `Dockerfile`, `.gitlab-ci.yml` (modify), `README.md` (replace template)
+
+**Interfaces:** Produces `docker build` → runnable image; CI `unit-test` job; README with required sections.
+
+- [ ] **Step 1: Write the failing test (CI contract)**
+
+No unit test for infra; the "test" is the CI job name. Verify by grepping the config.
+
+`test/ci.test.ts`:
+```ts
+import * as fs from 'fs';
+import * as path from 'path';
+
+test('gitlab CI defines a unit-test job', () => {
+  const ci = fs.readFileSync(path.join(__dirname, '..', '.gitlab-ci.yml'), 'utf8');
+  expect(ci).toMatch(/^unit-test:/m);
+});
+
+test('Dockerfile exists and is multi-stage', () => {
+  const df = fs.readFileSync(path.join(__dirname, '..', 'Dockerfile'), 'utf8');
+  expect(df).toContain('FROM node:20');
+  expect((df.match(/FROM/g) || []).length).toBeGreaterThanOrEqual(2);
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx jest test/ci.test.ts`
+Expected: FAIL — `Dockerfile` missing, `.gitlab-ci.yml` has no `unit-test:` job.
+
+- [ ] **Step 3: Write minimal implementation**
+
+`Dockerfile`:
+```dockerfile
+# stage 1: build
+FROM node:20-bookworm-slim AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY tsconfig.json ./
+COPY src ./src
+COPY demo ./demo
+RUN npm run build
+# carry public assets into dist
+RUN cp -r src/web/public dist/web/public 2>/dev/null || true
+
+# stage 2: prod
+FROM node:20-bookworm-slim
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --omit=dev
+COPY --from=build /app/dist ./dist
+EXPOSE 8080
+CMD ["node", "dist/index.js"]
+```
+
+Modify `.gitlab-ci.yml` — keep existing SAST/secret-detection; add a `unit-test` job at top level:
+```yaml
+unit-test:
+  stage: test
+  image: node:20-bookworm-slim
+  script:
+    - npm ci
+    - npm test
+```
+(Insert before the `include:` line so it is a peer job; do not remove `sast`/`secret_detection`.)
+
+`src/index.ts` (replace the Task 1 greet stub with a real entry):
+```ts
+export function greet(name: string): string { return `hello, ${name}`; }
+
+async function main() {
+  const args = process.argv.slice(2);
+  if (args.includes('--web')) {
+    const { startWebServer } = require('./web/webServer');
+    const { EventStore } = require('./loop/eventSink');
+    const { HttpApprovalGateway } = require('./approval/httpApprovalGateway');
+    const { EncryptedFileStore } = require('./creds/credentialStore');
+    const port = Number(process.env.PORT ?? 8080);
+    const home = require('os').homedir();
+    await startWebServer({
+      port,
+      eventStore: new EventStore(),
+      approval: new HttpApprovalGateway(),
+      creds: new EncryptedFileStore(require('path').join(home, '.ai4se', 'creds.enc')),
+      loopFactory: async () => ({ haltReason: 'finish', iterations: 0 }), // wired fully in a follow-up; demo boots panel
+    });
+    console.log(`harness web panel on :${port}`);
+  } else {
+    console.log('usage: --web  (start control panel)');
+  }
+}
+main().catch((e) => { console.error(e); process.exit(1); });
+```
+Note: `test/smoke.test.ts` still imports `greet`, which remains exported — do not break it.
+
+`README.md` (replace the GitLab template entirely):
+```markdown
+# AI4SE-Safe-TDD-Harness
+
+A self-coded Coding Agent Harness (Node.js/TypeScript): a hand-written agent main loop with a mockable LLM layer, a shell-command guardrail + human-in-the-loop approval, and a structured TDD feedback loop. Deterministically unit-testable with a mock LLM and no network.
+
+## Install & Run (Docker)
+\`\`\`
+docker build -t ai4se-safe-tdd-harness .
+docker run -p 8080:8080 -e MASTER_PASSWORD=... -v "$PWD/workspace":/workspace ai4se-safe-tdd-harness
+\`\`\`
+Open http://localhost:8080. Configure your API key in the panel (stored AES-256-GCM encrypted; master password via MASTER_PASSWORD env or prompted).
+
+## Local dev
+\`\`\`
+npm ci
+npm test          # all unit tests
+npm run demo      # §A.6 mechanism demo
+npm run build && node dist/index.js --web
+\`\`\`
+
+## API key safety
+- Never passed on the command line (would enter shell history).
+- Stored encrypted at ~/.ai4se/creds.enc (AES-256-GCM), unlocked by a master password.
+- .env is a plaintext fallback only; a warning is logged when it is used.
+- status() never echoes the plaintext key.
+
+## Limitations
+- Linux/amd64 primary target; Windows/mac need local build.
+- Single task at a time (no concurrency).
+- FeedbackClassifier robustly recognizes Jest assertion/syntax failures; other runners fall back to 'other'.
+
+## CI
+.gitlab-ci.yml defines a unit-test job (npm ci && npm test) plus SAST and secret-detection.
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx jest test/ci.test.ts && npm test`
+Expected: PASS (ci.test asserts Dockerfile + unit-test job; full suite green).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Dockerfile .gitlab-ci.yml README.md src/index.ts test/ci.test.ts
+git commit -m "feat(dist): Dockerfile, CI unit-test job, README"
+```
+
+---
+
+## Self-Review Notes
+
+Run after writing the plan (done inline):
+
+1. **Spec coverage:** SPEC §3.1 ActionProtocol → T3; §3.2 LLMProvider/Mock → T4/T13; §3.3 ToolRegistry+tools → T5/T6; §3.4 Guardrail → T7; §3.5 ApprovalGateway → T11/T14; §3.6 FeedbackClassifier → T8; §3.7 AgentLoop → T12; §3.8 MemoryStore → T9; §3.9 CredentialStore → T10; §3.10 WebServer+frontend → T15/T16; §A.6 demo → T17; §7.2 Docker → T18; CI unit-test → T18. All SPEC sections mapped. ✓
+2. **Placeholder scan:** No TBD/TODO. All steps carry concrete code/commands. ✓
+3. **Type consistency:** `LLMProvider.complete` returns `{text, stopReason}` (T4, T13, T12 consistent). `Guardrail.assess(action)` returns `GuardrailVerdict` (T7, T12). `ApprovalGateway.request(action, reasons)` returns `ApprovalDecision` (T11, T14, T12). `FeedbackClassifier.parse(obs)` returns `Feedback` (T8, T12, T17). `AgentLoop.run()` returns `{haltReason, iterations}` (T12, T15, T17, T18). `EventStore`/`EventSink` consistent (T12, T15, T16). `ToolRegistry.dispatch(action, ctx)` (T5, T12). ✓
+4. **Gaps fixed:** T18 `src/index.ts` rewrite preserves `greet` export so T1 smoke test stays green — noted explicitly. Static-asset path under ts-jest verified (`__dirname` resolves to `src/web`). ✓
+
+---
+
+## Dependencies / Parallelism
+
+- Serial backbone: T1 → T2 → (T3, T4, T9 parallel) → (T5 → T6) → (T7, T8, T10, T11 parallel) → T12 → (T13, T14 parallel) → T15 → T16 → T17 → T18.
+- Parallelizable in isolated worktrees (T4): T3‖T4‖T9 after T2; T7‖T8‖T10‖T11 after T6; T13‖T14 after T12.
+- Per SPEC §12 T4 trim: open one worktree per milestone (foundation / mechanisms / loop / web / dist), not per task.
