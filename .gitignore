@@ -1,2 +1,9 @@
 .env
 node_modules/
+dist/
+*.log
+
+# 本地参考文档与本地 AI 指引，不纳入仓库
+CLAUDE.md
+AI4SE 期末项目 · 通用要求（所有项目必读）.md
+AI4SE_Final_Project_A_Coding_Agent_Harness.md
