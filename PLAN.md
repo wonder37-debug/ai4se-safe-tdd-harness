@@ -1,83 +1,83 @@
-# AI4SE-Safe-TDD-Harness Implementation Plan
+# AI4SE-Safe-TDD-Harness 实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **给 agentic worker：** 必用子技能：用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 按任务逐个实现本计划。步骤用复选框（`- [ ]`）语法跟踪。
 
-**Goal:** Build a self-coded Coding Agent Harness kernel (Node.js/TS) with a mockable LLM layer, a shell-command guardrail + HITL approval (deep dimension 1), and a structured TDD feedback loop (deep dimension 2), plus a minimal Web control panel and Docker distribution.
+**目标：** 自研一个 Coding Agent Harness 内核（Node.js/TS），含可注入 Mock 的 LLM 层、shell 命令护栏 + HITL 人工审批（深维度 1）、结构化 TDD 失败反馈闭环（深维度 2），以及最小 Web 控制面板和 Docker 分发。
 
-**Architecture:** A hand-written `AgentLoop` while-state-machine (`RUNNING → APPROVAL_PENDING → EXECUTING → HALTED`) orchestrates injectable interfaces — `LLMProvider`, `ActionProtocol`, `ToolRegistry`, `Guardrail`, `ApprovalGateway`, `FeedbackClassifier`, `MemoryStore`, `CredentialStore`. Every interface has a production impl and a mock/stub impl, so the whole kernel is deterministically testable with no network and no real LLM. A `WebServer` (Node `http`, HTTP polling) exposes task submission, a live event stream, and in-browser HITL approval.
+**架构：** 一个手写的 `AgentLoop` while 状态机（`RUNNING → APPROVAL_PENDING → EXECUTING → HALTED`）编排一组可注入接口——`LLMProvider`、`ActionProtocol`、`ToolRegistry`、`Guardrail`、`ApprovalGateway`、`FeedbackClassifier`、`MemoryStore`、`CredentialStore`。每个接口都有生产实现与 mock/stub 实现，使整个内核在无网络、无真实 LLM 下可确定性测试。`WebServer`（Node `http`，HTTP 轮询）暴露任务提交、实时事件流与浏览器内 HITL 审批。
 
-**Tech Stack:** Node.js 20 LTS, TypeScript 5, Jest + ts-jest. Single runtime dep: `shell-quote`. Node built-ins for everything else (`http`, `crypto`, `fs/promises`, `child_process`, global `fetch`).
+**技术栈：** Node.js 20 LTS、TypeScript 5、Jest + ts-jest。唯一运行时依赖：`shell-quote`。其余一律用 Node 内置（`http`、`crypto`、`fs/promises`、`child_process`、全局 `fetch`）。
 
-## Global Constraints
+## 全局约束
 
-(Verbatim from SPEC.md §4, §7, §8, §12 — every task implicitly includes these.)
+（逐字取自 SPEC.md §4、§7、§8、§12——每个任务隐含包含以下条款。）
 
-- Node 20 LTS; TypeScript strict mode; CommonJS module output (jest/node friendly).
-- Harness core must be self-coded: NO LangChain/AutoGen/CrewAI/agent-SDK high-level loops. Raw `/v1/chat/completions` via global `fetch` only.
-- Every core mechanism must be a deterministic function unit-testable with a mock/stub LLM and no network (SPEC §4.4 / §A.4-C).
-- TDD hard requirement: red → green → refactor; no implementation before its failing test (SPEC §3.6).
-- Credentials: never hardcode/commit/log; AES-256-GCM encrypted file + master password; `.env` only as warned fallback; `status()` never echoes plaintext (SPEC §3.9 / §4.2).
-- Distribution: Docker only (T1 trim); `docker run -p 8080:8080` must boot the web panel (SPEC §7.2).
-- CI: `.gitlab-ci.yml` must contain a job named `unit-test` (SPEC §五 item 6).
-- 2-week feasibility trims in force: HTTP polling (no WebSocket), 3-class error taxonomy (`assertion`/`syntax`/`other`), milestone-level worktrees, single-task concurrency (SPEC §12).
-- No real credentials in repo; `.env` is gitignored and must stay untracked.
+- Node 20 LTS；TypeScript strict 模式；CommonJS 输出（jest/node 友好）。
+- Harness 内核必须自研：禁用 LangChain/AutoGen/CrewAI/agent-SDK 的高层 loop。仅可用裸 `/v1/chat/completions` 经全局 `fetch`。
+- 每个核心机制必须是确定性函数，可用 mock/stub LLM 单测、无网络（SPEC §4.4 / §A.4-C）。
+- TDD 硬性要求：红 → 绿 → 重构；不得先于失败测试写实现（SPEC §3.6）。
+- 凭据：绝不硬编码/提交/记日志；AES-256-GCM 加密文件 + 主密码；`.env` 仅作带告警的 fallback；`status()` 绝不回显明文（SPEC §3.9 / §4.2）。
+- 分发：仅 Docker（T1 裁剪）；`docker run -p 8080:8080` 必须能起 web 面板（SPEC §7.2）。
+- CI：`.gitlab-ci.yml` 必须含名为 `unit-test` 的 job（SPEC §五 item 6）。
+- 2 周裁剪生效：HTTP 轮询（无 WebSocket）、错误分类 3 类（`assertion`/`syntax`/`other`）、按里程碑开 worktree、单任务并发（SPEC §12）。
+- 仓库内不得出现真实凭据；`.env` 已被 gitignore 且必须保持未跟踪。
 
 ---
 
-## File Structure
+## 文件结构
 
 ```
-package.json                  # deps + scripts (test, demo, build, start)
+package.json                  # 依赖 + scripts（test, demo, build, start）
 tsconfig.json                 # strict TS, commonjs, rootDir . outDir dist
-jest.config.js                # ts-jest preset, test+demo globs
-.env.example                  # CLAUDE_API_KEY= / API_BASE_URL= (no real values)
-Dockerfile                    # multi-stage: build → prod image
-.gitlab-ci.yml                # add unit-test + docker-build jobs
+jest.config.js                # ts-jest preset, test+demo glob
+.env.example                  # CLAUDE_API_KEY= / API_BASE_URL=（无真实值）
+Dockerfile                    # 多阶段：build → 生产镜像
+.gitlab-ci.yml                # 增加 unit-test + docker-build job
 src/
   types.ts                    # Message, Action, Observation, Feedback, GuardrailVerdict, Approval, Event
-  index.ts                    # CLI entry: --web | --task <file>
-  llm/provider.ts             # LLMProvider interface + Message re-export
-  llm/scriptedMock.ts         # ScriptedMock (queued/sticky responses)
-  llm/openaiCompat.ts         # OpenAICompatProvider (global fetch)
+  index.ts                    # CLI 入口：--web | --task <file>
+  llm/provider.ts             # LLMProvider 接口 + Message 再导出
+  llm/scriptedMock.ts         # ScriptedMock（队列/粘滞响应）
+  llm/openaiCompat.ts         # OpenAICompatProvider（全局 fetch）
   protocol/actionProtocol.ts  # parse(text) -> Action[]
-  tools/tool.ts               # Tool interface, ToolRegistry, ToolContext
+  tools/tool.ts               # Tool 接口, ToolRegistry, ToolContext
   tools/fileTools.ts          # read_file, write_file, list_dir
-  tools/shellTools.ts         # run_shell, run_tests (capture only)
+  tools/shellTools.ts         # run_shell, run_tests（仅捕获）
   guardrail/guardrail.ts      # assess(action) + shell-quote tokenize
   guardrail/dangerPatterns.json
-  approval/approvalGateway.ts # interface + MockApprovalGateway
-  approval/httpApprovalGateway.ts # pending-resolver map
-  feedback/feedbackClassifier.ts # Parser interface + classify()
+  approval/approvalGateway.ts # 接口 + MockApprovalGateway
+  approval/httpApprovalGateway.ts # pending resolver map
+  feedback/feedbackClassifier.ts # Parser 接口 + classify()
   feedback/jestParser.ts      # JestParser
-  memory/memoryStore.ts       # file-backed KV
-  creds/credentialStore.ts    # interface + EncryptedFileStore
-  loop/agentLoop.ts           # the while state machine
-  loop/eventSink.ts           # EventSink interface + noop + EventStore
-  web/webServer.ts            # http routes, EventStore-backed polling
+  memory/memoryStore.ts       # 文件式 KV
+  creds/credentialStore.ts    # 接口 + EncryptedFileStore
+  loop/agentLoop.ts           # while 状态机
+  loop/eventSink.ts           # EventSink 接口 + noop + EventStore
+  web/webServer.ts            # http 路由, EventStore 轮询
   web/public/index.html
   web/public/app.js
   web/public/style.css
 demo/
-  mechanism-demo.test.ts      # §A.6 three acts
+  mechanism-demo.test.ts      # §A.6 三幕
   fixtures/jest-assertion-fail.txt
   fixtures/jest-syntax-fail.txt
-test/                         # one test file per src module
+test/                         # 每个 src 模块一个测试文件
   *.test.ts
 ```
 
-**Responsibility rule:** each file = one mechanism / one interface. `types.ts` is the only cross-cutting file. Tests mirror src paths under `test/`.
+**职责规则：** 每个文件 = 一个机制 / 一个接口。`types.ts` 是唯一的横切文件。测试在 `test/` 下镜像 src 路径。
 
 ---
 
-## Task 1: Project scaffold + tooling smoke test
+## 任务 1：工程脚手架 + 工具链冒烟测试
 
-**Files:**
-- Create: `package.json`, `tsconfig.json`, `jest.config.js`, `.env.example`, `src/index.ts`, `test/smoke.test.ts`
-- Modify: `.gitignore` (add `dist/`, `*.log`)
+**文件：**
+- 新建：`package.json`、`tsconfig.json`、`jest.config.js`、`.env.example`、`src/index.ts`、`test/smoke.test.ts`
+- 修改：`.gitignore`（加 `dist/`、`*.log`）
 
-**Interfaces:** Produces a runnable `npm test` (jest+ts-jest) and a typed `src/index.ts` entry.
+**接口：** 产出可运行的 `npm test`（jest+ts-jest）与有类型的 `src/index.ts` 入口。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/smoke.test.ts`:
 ```ts
@@ -88,12 +88,12 @@ test('smoke: jest + ts + import works', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/smoke.test.ts`
-Expected: FAIL — `src/index.ts` does not export `greet` (file not created yet / module missing).
+运行：`npx jest test/smoke.test.ts`
+预期：FAIL——`src/index.ts` 未导出 `greet`（文件未建 / 模块缺失）。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/index.ts`:
 ```ts
@@ -154,15 +154,15 @@ CLAUDE_API_KEY=
 API_BASE_URL=
 ```
 
-Append to `.gitignore`: `dist/` and `*.log` on separate lines (`.env` and `node_modules/` already present).
+向 `.gitignore` 追加：`dist/` 与 `*.log` 各占一行（`.env` 与 `node_modules/` 已存在）。
 
-- [ ] **Step 4: Install deps and run test**
+- [ ] **步骤 4：装依赖并运行测试**
 
-Run: `npm install --save-dev typescript@5 ts-jest jest @types/jest @types/node && npm install shell-quote @types/shell-quote`
-Run: `npx jest test/smoke.test.ts`
-Expected: PASS (1 test).
+运行：`npm install --save-dev typescript@5 ts-jest jest @types/jest @types/node && npm install shell-quote @types/shell-quote`
+运行：`npx jest test/smoke.test.ts`
+预期：PASS（1 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add package.json package-lock.json tsconfig.json jest.config.js .env.example .gitignore src/index.ts test/smoke.test.ts
@@ -171,15 +171,15 @@ git commit -m "chore: scaffold node+ts+jest project with smoke test"
 
 ---
 
-## Task 2: Core domain types
+## 任务 2：核心领域类型
 
-**Files:**
-- Create: `src/types.ts`, `test/types.test.ts`
+**文件：**
+- 新建：`src/types.ts`、`test/types.test.ts`
 
-**Interfaces:**
-- Produces: `Message`, `Action`, `Observation`, `Feedback`, `GuardrailVerdict`, `Approval`, `Event` (types used by every later task).
+**接口：**
+- 产出：`Message`、`Action`、`Observation`、`Feedback`、`GuardrailVerdict`、`Approval`、`Event`（后续所有任务都用这些类型）。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/types.test.ts`:
 ```ts
@@ -199,12 +199,12 @@ test('types: Action shape is constructable', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/types.test.ts`
-Expected: FAIL — `../src/types` has no exports (TS2307 / no symbols).
+运行：`npx jest test/types.test.ts`
+预期：FAIL——`../src/types` 无导出（TS2307 / 无符号）。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/types.ts`:
 ```ts
@@ -242,12 +242,12 @@ export type EventType = 'action' | 'observation' | 'approval_request' | 'approva
 export interface Event { id: number; type: EventType; payload: any; iter: number; }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/types.test.ts`
-Expected: PASS.
+运行：`npx jest test/types.test.ts`
+预期：PASS。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/types.ts test/types.test.ts
@@ -256,16 +256,16 @@ git commit -m "feat(types): add core domain types"
 
 ---
 
-## Task 3: ActionProtocol parser
+## 任务 3：ActionProtocol 解析器
 
-**Files:**
-- Create: `src/protocol/actionProtocol.ts`, `test/actionProtocol.test.ts`
+**文件：**
+- 新建：`src/protocol/actionProtocol.ts`、`test/actionProtocol.test.ts`
 
-**Interfaces:**
-- Consumes: `Action` from `src/types`.
-- Produces: `ActionProtocol.parse(text: string): Action[]`.
+**接口：**
+- 消费：`src/types` 的 `Action`。
+- 产出：`ActionProtocol.parse(text: string): Action[]`。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/actionProtocol.test.ts`:
 ```ts
@@ -288,12 +288,12 @@ test('ignores malformed JSON block (returns empty, does not throw)', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/actionProtocol.test.ts`
-Expected: FAIL — module `../src/protocol/actionProtocol` not found.
+运行：`npx jest test/actionProtocol.test.ts`
+预期：FAIL——模块 `../src/protocol/actionProtocol` 未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/protocol/actionProtocol.ts`:
 ```ts
@@ -313,7 +313,7 @@ export const ActionProtocol = {
           out.push({ tool: obj.tool, args: obj.args });
         }
       } catch {
-        // malformed block: skip, do not throw
+        // 畸形块：跳过，不抛
       }
     }
     return out;
@@ -321,12 +321,12 @@ export const ActionProtocol = {
 };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/actionProtocol.test.ts`
-Expected: PASS (3 tests).
+运行：`npx jest test/actionProtocol.test.ts`
+预期：PASS（3 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/protocol/actionProtocol.ts test/actionProtocol.test.ts
@@ -335,16 +335,16 @@ git commit -m "feat(protocol): action fence parser"
 
 ---
 
-## Task 4: ScriptedMock LLMProvider
+## 任务 4：ScriptedMock LLMProvider
 
-**Files:**
-- Create: `src/llm/provider.ts`, `src/llm/scriptedMock.ts`, `test/scriptedMock.test.ts`
+**文件：**
+- 新建：`src/llm/provider.ts`、`src/llm/scriptedMock.ts`、`test/scriptedMock.test.ts`
 
-**Interfaces:**
-- Consumes: `Message` from `src/types`.
-- Produces: `LLMProvider` interface (`async complete(messages): Promise<{text, stopReason}>`), `ScriptedMock`.
+**接口：**
+- 消费：`src/types` 的 `Message`。
+- 产出：`LLMProvider` 接口（`async complete(messages): Promise<{text, stopReason}>`）、`ScriptedMock`。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/scriptedMock.test.ts`:
 ```ts
@@ -369,12 +369,12 @@ test('throws when queue empties and not sticky', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/scriptedMock.test.ts`
-Expected: FAIL — module not found.
+运行：`npx jest test/scriptedMock.test.ts`
+预期：FAIL——模块未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/llm/provider.ts`:
 ```ts
@@ -412,12 +412,12 @@ export class ScriptedMock implements LLMProvider {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/scriptedMock.test.ts`
-Expected: PASS (3 tests).
+运行：`npx jest test/scriptedMock.test.ts`
+预期：PASS（3 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/llm/provider.ts src/llm/scriptedMock.ts test/scriptedMock.test.ts
@@ -426,16 +426,16 @@ git commit -m "feat(llm): LLMProvider interface + ScriptedMock"
 
 ---
 
-## Task 5: ToolRegistry + file tools
+## 任务 5：ToolRegistry + 文件工具
 
-**Files:**
-- Create: `src/tools/tool.ts`, `src/tools/fileTools.ts`, `test/fileTools.test.ts`
+**文件：**
+- 新建：`src/tools/tool.ts`、`src/tools/fileTools.ts`、`test/fileTools.test.ts`
 
-**Interfaces:**
-- Consumes: `Action`, `Observation` from `src/types`.
-- Produces: `Tool` interface, `ToolRegistry`, `ToolContext`, file tools `read_file`/`write_file`/`list_dir`.
+**接口：**
+- 消费：`src/types` 的 `Action`、`Observation`。
+- 产出：`Tool` 接口、`ToolRegistry`、`ToolContext`，文件工具 `read_file`/`write_file`/`list_dir`。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/fileTools.test.ts`:
 ```ts
@@ -476,12 +476,12 @@ test('read_file on missing file returns ok:false with error', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/fileTools.test.ts`
-Expected: FAIL — modules not found.
+运行：`npx jest test/fileTools.test.ts`
+预期：FAIL——模块未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/tools/tool.ts`:
 ```ts
@@ -555,12 +555,12 @@ export const list_dir: Tool = {
 export const fileTools: Tool[] = [read_file, write_file, list_dir];
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/fileTools.test.ts`
-Expected: PASS (3 tests).
+运行：`npx jest test/fileTools.test.ts`
+预期：PASS（3 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/tools/tool.ts src/tools/fileTools.ts test/fileTools.test.ts
@@ -569,16 +569,16 @@ git commit -m "feat(tools): ToolRegistry + file tools"
 
 ---
 
-## Task 6: Shell tools (run_shell / run_tests capture)
+## 任务 6：shell 工具（run_shell / run_tests 捕获）
 
-**Files:**
-- Create: `src/tools/shellTools.ts`, `test/shellTools.test.ts`
+**文件：**
+- 新建：`src/tools/shellTools.ts`、`test/shellTools.test.ts`
 
-**Interfaces:**
-- Consumes: `Tool`, `ToolContext` from `src/tools/tool`.
-- Produces: `run_shell`, `run_tests` (capture stdout/stderr/exitCode only — feedback parsing is the loop's job in Task 11).
+**接口：**
+- 消费：`src/tools/tool` 的 `Tool`、`ToolContext`。
+- 产出：`run_shell`、`run_tests`（仅捕获 stdout/stderr/exitCode——反馈解析归任务 11 的主循环）。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/shellTools.test.ts`:
 ```ts
@@ -609,12 +609,12 @@ test('run_shell captures non-zero exit and stderr', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/shellTools.test.ts`
-Expected: FAIL — module not found.
+运行：`npx jest test/shellTools.test.ts`
+预期：FAIL——模块未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/tools/shellTools.ts`:
 ```ts
@@ -668,12 +668,12 @@ export const run_tests: Tool = {
 export const shellTools: Tool[] = [run_shell, run_tests];
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/shellTools.test.ts`
-Expected: PASS (2 tests).
+运行：`npx jest test/shellTools.test.ts`
+预期：PASS（2 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/tools/shellTools.ts test/shellTools.test.ts
@@ -682,16 +682,16 @@ git commit -m "feat(tools): run_shell + run_tests capture"
 
 ---
 
-## Task 7: Guardrail (deep dimension 1) — shell-quote tokenize + danger patterns
+## 任务 7：Guardrail（深维度 1）——shell-quote tokenize + 危险模式库
 
-**Files:**
-- Create: `src/guardrail/dangerPatterns.json`, `src/guardrail/guardrail.ts`, `test/guardrail.test.ts`
+**文件：**
+- 新建：`src/guardrail/dangerPatterns.json`、`src/guardrail/guardrail.ts`、`test/guardrail.test.ts`
 
-**Interfaces:**
-- Consumes: `Action`, `GuardrailVerdict` from `src/types`.
-- Produces: `Guardrail.assess(action): GuardrailVerdict`.
+**接口：**
+- 消费：`src/types` 的 `Action`、`GuardrailVerdict`。
+- 产出：`Guardrail.assess(action): GuardrailVerdict`。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/guardrail.test.ts`:
 ```ts
@@ -722,12 +722,12 @@ test('write_file action is none (not assessed)', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/guardrail.test.ts`
-Expected: FAIL — module not found.
+运行：`npx jest test/guardrail.test.ts`
+预期：FAIL——模块未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/guardrail/dangerPatterns.json`:
 ```json
@@ -817,12 +817,12 @@ export const Guardrail = {
 };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/guardrail.test.ts`
-Expected: PASS (7 tests).
+运行：`npx jest test/guardrail.test.ts`
+预期：PASS（7 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/guardrail/dangerPatterns.json src/guardrail/guardrail.ts test/guardrail.test.ts
@@ -831,18 +831,18 @@ git commit -m "feat(guardrail): shell-quote tokenize + danger pattern library"
 
 ---
 
-## Task 8: FeedbackClassifier + JestParser (deep dimension 2)
+## 任务 8：FeedbackClassifier + JestParser（深维度 2）
 
-**Files:**
-- Create: `src/feedback/feedbackClassifier.ts`, `src/feedback/jestParser.ts`, `demo/fixtures/jest-assertion-fail.txt`, `demo/fixtures/jest-syntax-fail.txt`, `test/feedbackClassifier.test.ts`
+**文件：**
+- 新建：`src/feedback/feedbackClassifier.ts`、`src/feedback/jestParser.ts`、`demo/fixtures/jest-assertion-fail.txt`、`demo/fixtures/jest-syntax-fail.txt`、`test/feedbackClassifier.test.ts`
 
-**Interfaces:**
-- Consumes: `Observation`, `Feedback` from `src/types`.
-- Produces: `Parser` interface, `FeedbackClassifier` (constructed with a `Parser`), `JestParser`.
+**接口：**
+- 消费：`src/types` 的 `Observation`、`Feedback`。
+- 产出：`Parser` 接口、`FeedbackClassifier`（用 `Parser` 构造）、`JestParser`。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
-`demo/fixtures/jest-assertion-fail.txt` (realistic Jest failure stderr):
+`demo/fixtures/jest-assertion-fail.txt`（逼真的 Jest 失败 stderr）:
 ```
 FAIL  ./add.test.js
   ● add › returns sum
@@ -899,12 +899,12 @@ test('unrecognized output falls back to other with truncated evidence', async ()
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/feedbackClassifier.test.ts`
-Expected: FAIL — modules/fixtures not found.
+运行：`npx jest test/feedbackClassifier.test.ts`
+预期：FAIL——模块/fixture 未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/feedback/feedbackClassifier.ts`:
 ```ts
@@ -975,12 +975,12 @@ export const JestParser: Parser = {
 };
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/feedbackClassifier.test.ts`
-Expected: PASS (3 tests).
+运行：`npx jest test/feedbackClassifier.test.ts`
+预期：PASS（3 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/feedback/feedbackClassifier.ts src/feedback/jestParser.ts demo/fixtures/*.txt test/feedbackClassifier.test.ts
@@ -989,14 +989,14 @@ git commit -m "feat(feedback): FeedbackClassifier + JestParser"
 
 ---
 
-## Task 9: MemoryStore (minimum memory dimension)
+## 任务 9：MemoryStore（记忆维度最小实现）
 
-**Files:**
-- Create: `src/memory/memoryStore.ts`, `test/memoryStore.test.ts`
+**文件：**
+- 新建：`src/memory/memoryStore.ts`、`test/memoryStore.test.ts`
 
-**Interfaces:** Produces `MemoryStore` (`read(): {key,note}[]`, `write(key,note)`, `clear(key)`).
+**接口：** 产出 `MemoryStore`（`read(): {key,note}[]`、`write(key,note)`、`clear(key)`）。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/memoryStore.test.ts`:
 ```ts
@@ -1023,12 +1023,12 @@ test('system prompt includes notes', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/memoryStore.test.ts`
-Expected: FAIL — module not found.
+运行：`npx jest test/memoryStore.test.ts`
+预期：FAIL——模块未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/memory/memoryStore.ts`:
 ```ts
@@ -1067,12 +1067,12 @@ export class MemoryStore {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/memoryStore.test.ts`
-Expected: PASS (2 tests).
+运行：`npx jest test/memoryStore.test.ts`
+预期：PASS（2 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/memory/memoryStore.ts test/memoryStore.test.ts
@@ -1081,15 +1081,15 @@ git commit -m "feat(memory): file-backed MemoryStore"
 
 ---
 
-## Task 10: CredentialStore — EncryptedFileStore (AES-256-GCM)
+## 任务 10：CredentialStore —— EncryptedFileStore（AES-256-GCM）
 
-**Files:**
-- Create: `src/creds/credentialStore.ts`, `test/credentialStore.test.ts`
+**文件：**
+- 新建：`src/creds/credentialStore.ts`、`test/credentialStore.test.ts`
 
-**Interfaces:**
-- Produces: `CredentialStore` interface, `EncryptedFileStore` (`set(key, masterPassword)`, `status()`, `clear()`, `resolve(masterPassword)`).
+**接口：**
+- 产出：`CredentialStore` 接口、`EncryptedFileStore`（`set(key, masterPassword)`、`status()`、`clear()`、`resolve(masterPassword)`）。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/credentialStore.test.ts`:
 ```ts
@@ -1125,12 +1125,12 @@ test('clear removes the file; status not present', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/credentialStore.test.ts`
-Expected: FAIL — module not found.
+运行：`npx jest test/credentialStore.test.ts`
+预期：FAIL——模块未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/creds/credentialStore.ts`:
 ```ts
@@ -1187,12 +1187,12 @@ export class EncryptedFileStore implements CredentialStore {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/credentialStore.test.ts`
-Expected: PASS (3 tests).
+运行：`npx jest test/credentialStore.test.ts`
+预期：PASS（3 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/creds/credentialStore.ts test/credentialStore.test.ts
@@ -1201,15 +1201,15 @@ git commit -m "feat(creds): EncryptedFileStore AES-256-GCM"
 
 ---
 
-## Task 11: MockApprovalGateway
+## 任务 11：MockApprovalGateway
 
-**Files:**
-- Create: `src/approval/approvalGateway.ts`, `test/approvalGateway.test.ts`
+**文件：**
+- 新建：`src/approval/approvalGateway.ts`、`test/approvalGateway.test.ts`
 
-**Interfaces:**
-- Produces: `ApprovalGateway` interface (`request(action, reasons): Promise<ApprovalDecision>`), `MockApprovalGateway`.
+**接口：**
+- 产出：`ApprovalGateway` 接口（`request(action, reasons): Promise<ApprovalDecision>`）、`MockApprovalGateway`。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/approvalGateway.test.ts`:
 ```ts
@@ -1226,12 +1226,12 @@ test('returns queued decisions in order', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/approvalGateway.test.ts`
-Expected: FAIL — module not found.
+运行：`npx jest test/approvalGateway.test.ts`
+预期：FAIL——模块未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/approval/approvalGateway.ts`:
 ```ts
@@ -1251,12 +1251,12 @@ export class MockApprovalGateway implements ApprovalGateway {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/approvalGateway.test.ts`
-Expected: PASS (1 test).
+运行：`npx jest test/approvalGateway.test.ts`
+预期：PASS（1 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/approval/approvalGateway.ts test/approvalGateway.test.ts
@@ -1265,16 +1265,16 @@ git commit -m "feat(approval): ApprovalGateway interface + MockApprovalGateway"
 
 ---
 
-## Task 12: AgentLoop — the hand-written state machine (integration)
+## 任务 12：AgentLoop —— 手写状态机（集成）
 
-**Files:**
-- Create: `src/loop/eventSink.ts`, `src/loop/agentLoop.ts`, `test/agentLoop.test.ts`
+**文件：**
+- 新建：`src/loop/eventSink.ts`、`src/loop/agentLoop.ts`、`test/agentLoop.test.ts`
 
-**Interfaces:**
-- Consumes: `LLMProvider`, `ToolRegistry` (+file/shell tools), `Guardrail`, `ApprovalGateway`, `FeedbackClassifier`, `MemoryStore`, `ActionProtocol`.
-- Produces: `AgentLoop` (`run(): Promise<{haltReason, iterations}>`), `EventSink`.
+**接口：**
+- 消费：`LLMProvider`、`ToolRegistry`（+文件/shell 工具）、`Guardrail`、`ApprovalGateway`、`FeedbackClassifier`、`MemoryStore`、`ActionProtocol`。
+- 产出：`AgentLoop`（`run(): Promise<{haltReason, iterations}>`）、`EventSink`。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/agentLoop.test.ts`:
 ```ts
@@ -1300,7 +1300,7 @@ async function tmp(): Promise<string> { return fs.mkdtemp(path.join(os.tmpdir(),
 
 test('full green loop: write buggy -> test fails -> feedback -> fix -> green -> finish', async () => {
   const cwd = await tmp();
-  // target: a "test script" that fails unless add.js returns sum correctly
+  // 靶：一个"测试脚本"，仅当 add.js 正确返回和时通过
   await fs.writeFile(path.join(cwd, 'run-tests.sh'),
     process.platform === 'win32'
       ? `node -e "const a=require('./add.js');if(a(2,3)!==5){console.error('FAIL  ./add.test.js');console.error('  expect(received).toBe(expected)');console.error('  Expected: 5');console.error('  at add.test.js:4:17');process.exit(1)}else process.exit(0)"`
@@ -1308,9 +1308,9 @@ test('full green loop: write buggy -> test fails -> feedback -> fix -> green -> 
   );
   const reg = new ToolRegistry([...fileTools, ...shellTools]);
   const llm = new ScriptedMock([
-    action('write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a-b;\n' }), // buggy
+    action('write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a-b;\n' }), // 有 bug
     action('run_tests', { command: 'sh run-tests.sh' }),
-    action('write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a+b;\n' }), // fixed
+    action('write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a+b;\n' }), // 修复
     action('run_tests', { command: 'sh run-tests.sh' }),
     action('finish', {}),
   ]);
@@ -1323,7 +1323,7 @@ test('full green loop: write buggy -> test fails -> feedback -> fix -> green -> 
   const res = await loop.run();
   expect(res.haltReason).toBe('finish');
   expect(res.iterations).toBe(5);
-  // add.js now correct
+  // add.js 现已正确
   const add = require(path.join(cwd, 'add.js'));
   expect(add(2, 3)).toBe(5);
 });
@@ -1367,12 +1367,12 @@ test('stuck halt: same assertion point failing twice -> HALTED(stuck)', async ()
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/agentLoop.test.ts`
-Expected: FAIL — module not found.
+运行：`npx jest test/agentLoop.test.ts`
+预期：FAIL——模块未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/loop/eventSink.ts`:
 ```ts
@@ -1447,7 +1447,7 @@ export class AgentLoop {
         return { haltReason: 'finish', iterations: iter };
       }
 
-      // guardrail
+      // 护栏
       const verdict = this.deps.guardrail.assess(action);
       let effective: Action = action;
       if (verdict.severity === 'high') {
@@ -1461,11 +1461,11 @@ export class AgentLoop {
         this.messages.push({ role: 'observation', content: `WARN(low): ${verdict.reasons.join('; ')}` });
       }
 
-      // execute
+      // 执行
       const ctx: ToolContext = { cwd: this.deps.cwd };
       const obs = await this.deps.registry.dispatch(effective, ctx);
 
-      // feedback loop for run_tests failures
+      // run_tests 失败的反馈闭环
       if (action.tool === 'run_tests' && obs.exitCode !== 0) {
         const fb = this.deps.feedback.parse(obs);
         const key = fb.assertion ? `${fb.assertion.file}:${fb.assertion.line}` : fb.errorType;
@@ -1488,12 +1488,12 @@ export class AgentLoop {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/agentLoop.test.ts`
-Expected: PASS (3 tests). If `sh run-tests.sh` fails on Windows, the test uses `sh`; ensure Git Bash `sh` is on PATH (it is in this repo's shell). If flaky, the test already branches on `process.platform`.
+运行：`npx jest test/agentLoop.test.ts`
+预期：PASS（3 个测试）。若 Windows 下 `sh run-tests.sh` 失败，本仓库 shell 自带 Git Bash 的 `sh`，应在 PATH 中；测试已按 `process.platform` 分支处理。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/loop/eventSink.ts src/loop/agentLoop.ts test/agentLoop.test.ts
@@ -1502,16 +1502,16 @@ git commit -m "feat(loop): hand-written AgentLoop state machine with integration
 
 ---
 
-## Task 13: OpenAICompatProvider (real LLM, network-gated)
+## 任务 13：OpenAICompatProvider（真实 LLM，网络隔离）
 
-**Files:**
-- Create: `src/llm/openaiCompat.ts`, `test/openaiCompat.test.ts`
+**文件：**
+- 新建：`src/llm/openaiCompat.ts`、`test/openaiCompat.test.ts`
 
-**Interfaces:**
-- Consumes: `LLMProvider`, `Message`.
-- Produces: `OpenAICompatProvider` (uses global `fetch`; 4xx → `AuthError`).
+**接口：**
+- 消费：`LLMProvider`、`Message`。
+- 产出：`OpenAICompatProvider`（用全局 `fetch`；4xx → `AuthError`）。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/openaiCompat.test.ts`:
 ```ts
@@ -1536,12 +1536,12 @@ test('4xx throws AuthError', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/openaiCompat.test.ts`
-Expected: FAIL — module not found.
+运行：`npx jest test/openaiCompat.test.ts`
+预期：FAIL——模块未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/llm/openaiCompat.ts`:
 ```ts
@@ -1577,12 +1577,12 @@ export class OpenAICompatProvider implements LLMProvider {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/openaiCompat.test.ts`
-Expected: PASS (2 tests, no network — fetch is injected).
+运行：`npx jest test/openaiCompat.test.ts`
+预期：PASS（2 个测试，无网络——fetch 被注入）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/llm/openaiCompat.ts test/openaiCompat.test.ts
@@ -1591,15 +1591,15 @@ git commit -m "feat(llm): OpenAICompatProvider with injectable fetch"
 
 ---
 
-## Task 14: HttpApprovalGateway (in-browser HITL)
+## 任务 14：HttpApprovalGateway（浏览器内 HITL）
 
-**Files:**
-- Create: `src/approval/httpApprovalGateway.ts`, `test/httpApprovalGateway.test.ts`
+**文件：**
+- 新建：`src/approval/httpApprovalGateway.ts`、`test/httpApprovalGateway.test.ts`
 
-**Interfaces:**
-- Produces: `HttpApprovalGateway` (pending resolver map keyed by request id; `resolve(id, decision)` called by web route).
+**接口：**
+- 产出：`HttpApprovalGateway`（按请求 id 索引的 pending resolver map；`resolve(id, decision)` 由 web 路由调用）。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/httpApprovalGateway.test.ts`:
 ```ts
@@ -1624,12 +1624,12 @@ test('unresolved request pending until resolved or denied', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/httpApprovalGateway.test.ts`
-Expected: FAIL — module not found.
+运行：`npx jest test/httpApprovalGateway.test.ts`
+预期：FAIL——模块未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/approval/httpApprovalGateway.ts`:
 ```ts
@@ -1664,12 +1664,12 @@ export class HttpApprovalGateway implements ApprovalGateway {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/httpApprovalGateway.test.ts`
-Expected: PASS (2 tests).
+运行：`npx jest test/httpApprovalGateway.test.ts`
+预期：PASS（2 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/approval/httpApprovalGateway.ts test/httpApprovalGateway.test.ts
@@ -1678,16 +1678,16 @@ git commit -m "feat(approval): HttpApprovalGateway with pending resolvers"
 
 ---
 
-## Task 15: WebServer (http + polling routes + event store)
+## 任务 15：WebServer（http + 轮询路由 + 事件存储）
 
-**Files:**
-- Create: `src/web/webServer.ts`, `test/webServer.test.ts`
+**文件：**
+- 新建：`src/web/webServer.ts`、`test/webServer.test.ts`
 
-**Interfaces:**
-- Consumes: `AgentLoop`, `HttpApprovalGateway`, `EventStore`, `CredentialStore`.
-- Produces: `startWebServer({port, loopFactory, approval, creds, eventStore})` returning `{server}`.
+**接口：**
+- 消费：`AgentLoop`、`HttpApprovalGateway`、`EventStore`、`CredentialStore`。
+- 产出：`startWebServer({port, loopFactory, approval, creds, eventStore})` 返回 `{server}`。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/webServer.test.ts`:
 ```ts
@@ -1729,12 +1729,12 @@ test('GET /api/health returns 200; events poll empty initially', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/webServer.test.ts`
-Expected: FAIL — module not found.
+运行：`npx jest test/webServer.test.ts`
+预期：FAIL——模块未找到。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/web/webServer.ts`:
 ```ts
@@ -1797,12 +1797,12 @@ function body(req: http.IncomingMessage): Promise<any> {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/webServer.test.ts`
-Expected: PASS (1 test).
+运行：`npx jest test/webServer.test.ts`
+预期：PASS（1 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/web/webServer.ts test/webServer.test.ts
@@ -1811,15 +1811,15 @@ git commit -m "feat(web): http server with polling routes"
 
 ---
 
-## Task 16: Static frontend panel
+## 任务 16：静态前端面板
 
-**Files:**
-- Create: `src/web/public/index.html`, `src/web/public/app.js`, `src/web/public/style.css`
-- Modify: `src/web/webServer.ts` (serve static files + `/`)
+**文件：**
+- 新建：`src/web/public/index.html`、`src/web/public/app.js`、`src/web/public/style.css`
+- 修改：`src/web/webServer.ts`（提供静态文件 + `/`）
 
-**Interfaces:** Produces a 3-panel UI (task input / event stream / approvals).
+**接口：** 产出三栏 UI（任务输入 / 事件流 / 审批）。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `test/staticFrontend.test.ts`:
 ```ts
@@ -1839,12 +1839,12 @@ test('GET / serves index.html', async () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/staticFrontend.test.ts`
-Expected: FAIL — `/` returns 404.
+运行：`npx jest test/staticFrontend.test.ts`
+预期：FAIL——`/` 返回 404。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `src/web/public/index.html`:
 ```html
@@ -1898,13 +1898,13 @@ document.getElementById('setkey').onclick = () => fetch('/api/key', {method:'POS
 function decide(id, d) { fetch('/api/approval', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,decision:d,reason:'browser'})}); }
 ```
 
-Modify `src/web/webServer.ts`: add a static handler before the 404 branch. Insert after the `const url = …` line, add:
+修改 `src/web/webServer.ts`：在 404 分支前加静态处理器。在 `const url = …` 行之后插入：
 ```ts
 import { readFileSync, existsSync } from 'fs';
 import * as path from 'path';
 const PUB = path.join(__dirname, '..', 'public');
 ```
-and in the handler, before the final `else`:
+并在 handler 内、最后的 `else` 之前插入：
 ```ts
       } else if (req.method === 'GET' && (url.pathname === '/' || url.pathname.startsWith('/')) ) {
         const rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
@@ -1912,7 +1912,7 @@ and in the handler, before the final `else`:
         if (existsSync(f)) { res.setHeader('Content-Type', mime(rel)); res.end(readFileSync(f)); return; }
         res.statusCode = 404; res.end(JSON.stringify({ error: 'not found' }));
 ```
-and add a `mime` helper at bottom:
+并在文件底部加 `mime` 辅助函数：
 ```ts
 function mime(p: string): string {
   if (p.endsWith('.js')) return 'text/javascript';
@@ -1920,14 +1920,14 @@ function mime(p: string): string {
   return 'text/html';
 }
 ```
-Note: `__dirname` works because TS compiles to commonjs `dist/web/webServer.js` and `public/` ships alongside — copy `public` into `dist` in build (Task 17 Dockerfile handles; for tests, ts-jest runs from source so `src/web/public` is correct relative to `src/web/webServer.ts` → `path.join(__dirname,'..','public')` = `src/web/public`). ✓
+说明：`__dirname` 在 commonjs 编译产物 `dist/web/webServer.js` 下可用，`public/` 随之部署——构建时拷入 `dist`（任务 17 Dockerfile 处理）；测试在 ts-jest 源码态运行，`path.join(__dirname,'..','public')` 即 `src/web/public`。✓
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/staticFrontend.test.ts`
-Expected: PASS.
+运行：`npx jest test/staticFrontend.test.ts`
+预期：PASS。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add src/web/public/ src/web/webServer.ts test/staticFrontend.test.ts
@@ -1936,14 +1936,14 @@ git commit -m "feat(web): static 3-panel frontend"
 
 ---
 
-## Task 17: Mechanism demo (§A.6 three acts)
+## 任务 17：机制演示（§A.6 三幕）
 
-**Files:**
-- Create: `demo/mechanism-demo.test.ts`
+**文件：**
+- 新建：`demo/mechanism-demo.test.ts`
 
-**Interfaces:** Reuses Guardrail, MockApprovalGateway, FeedbackClassifier, JestParser, ScriptedMock, AgentLoop. Demonstrates ① guardrail+HITL ② feedback self-correction ③ deep behavior (obfuscation bypass + severity + stuck halt).
+**接口：** 复用 Guardrail、MockApprovalGateway、FeedbackClassifier、JestParser、ScriptedMock、AgentLoop。演示 ① 护栏 + HITL ② 反馈自修正 ③ 深行为（混淆绕过 + severity + 卡死停机）。
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **步骤 1：写失败测试**
 
 `demo/mechanism-demo.test.ts`:
 ```ts
@@ -2019,21 +2019,21 @@ describe('§A.6 mechanism demo', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npm run demo`
-Expected: FAIL (test references existing modules but `demo/` glob must be picked up — verify jest config includes `demo/`). If tests pass immediately because modules exist, the "fail" gate is the `demo/` glob not matching; ensure `jest.config.js` `testMatch` includes `**/demo/**/*.test.ts` (it does from Task 1).
+运行：`npm run demo`
+预期：FAIL（测试引用已存在模块，但须确认 `demo/` glob 被命中——若直接通过说明 jest 配置已含 `demo/`；失败门是 `demo/` glob 未匹配）。确保 `jest.config.js` 的 `testMatch` 含 `**/demo/**/*.test.ts`（任务 1 已含）。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
-No new impl — the demo wires existing modules. The "implementation" is the test file itself (already written in Step 1). If any assertion fails, fix the underlying module per its own task; do not weaken demo assertions.
+无新实现——演示即装配既有模块。"实现"即步骤 1 的测试文件本身。若有断言失败，按各模块自身任务修复底层模块；不得削弱演示断言。
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npm run demo`
-Expected: PASS (4 tests).
+运行：`npm run demo`
+预期：PASS（4 个测试）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add demo/mechanism-demo.test.ts
@@ -2042,16 +2042,16 @@ git commit -m "feat(demo): §A.6 three-act mechanism demo"
 
 ---
 
-## Task 18: Dockerfile + CI (unit-test job) + README
+## 任务 18：Dockerfile + CI（unit-test job）+ README
 
-**Files:**
-- Create: `Dockerfile`, `.gitlab-ci.yml` (modify), `README.md` (replace template)
+**文件：**
+- 新建：`Dockerfile`，修改 `.gitlab-ci.yml`，替换 `README.md`
 
-**Interfaces:** Produces `docker build` → runnable image; CI `unit-test` job; README with required sections.
+**接口：** 产出 `docker build` → 可运行镜像；CI `unit-test` job；README 含必需章节。
 
-- [ ] **Step 1: Write the failing test (CI contract)**
+- [ ] **步骤 1：写失败测试（CI 契约）**
 
-No unit test for infra; the "test" is the CI job name. Verify by grepping the config.
+基础设施无单元测试；"测试"即 CI job 名。用 grep 校验。
 
 `test/ci.test.ts`:
 ```ts
@@ -2070,12 +2070,12 @@ test('Dockerfile exists and is multi-stage', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **步骤 2：运行测试，验证失败**
 
-Run: `npx jest test/ci.test.ts`
-Expected: FAIL — `Dockerfile` missing, `.gitlab-ci.yml` has no `unit-test:` job.
+运行：`npx jest test/ci.test.ts`
+预期：FAIL——`Dockerfile` 缺失，`.gitlab-ci.yml` 无 `unit-test:` job。
 
-- [ ] **Step 3: Write minimal implementation**
+- [ ] **步骤 3：写最小实现**
 
 `Dockerfile`:
 ```dockerfile
@@ -2088,7 +2088,7 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY demo ./demo
 RUN npm run build
-# carry public assets into dist
+# 把 public 静态资源带进 dist
 RUN cp -r src/web/public dist/web/public 2>/dev/null || true
 
 # stage 2: prod
@@ -2102,7 +2102,7 @@ EXPOSE 8080
 CMD ["node", "dist/index.js"]
 ```
 
-Modify `.gitlab-ci.yml` — keep existing SAST/secret-detection; add a `unit-test` job at top level:
+修改 `.gitlab-ci.yml`——保留既有 SAST/secret-detection；在顶层加 `unit-test` job：
 ```yaml
 unit-test:
   stage: test
@@ -2111,9 +2111,9 @@ unit-test:
     - npm ci
     - npm test
 ```
-(Insert before the `include:` line so it is a peer job; do not remove `sast`/`secret_detection`.)
+（插在 `include:` 行之前使其成为同级 job；勿删 `sast`/`secret_detection`。）
 
-`src/index.ts` (replace the Task 1 greet stub with a real entry):
+`src/index.ts`（替换任务 1 的 greet 桩，改为真实入口）:
 ```ts
 export function greet(name: string): string { return `hello, ${name}`; }
 
@@ -2131,7 +2131,7 @@ async function main() {
       eventStore: new EventStore(),
       approval: new HttpApprovalGateway(),
       creds: new EncryptedFileStore(require('path').join(home, '.ai4se', 'creds.enc')),
-      loopFactory: async () => ({ haltReason: 'finish', iterations: 0 }), // wired fully in a follow-up; demo boots panel
+      loopFactory: async () => ({ haltReason: 'finish', iterations: 0 }), // 完整接线在后续任务；演示先起面板
     });
     console.log(`harness web panel on :${port}`);
   } else {
@@ -2140,50 +2140,50 @@ async function main() {
 }
 main().catch((e) => { console.error(e); process.exit(1); });
 ```
-Note: `test/smoke.test.ts` still imports `greet`, which remains exported — do not break it.
+说明：`test/smoke.test.ts` 仍 import `greet`，该 export 保留——勿破坏它。
 
-`README.md` (replace the GitLab template entirely):
+`README.md`（整个替换 GitLab 模板）:
 ```markdown
 # AI4SE-Safe-TDD-Harness
 
-A self-coded Coding Agent Harness (Node.js/TypeScript): a hand-written agent main loop with a mockable LLM layer, a shell-command guardrail + human-in-the-loop approval, and a structured TDD feedback loop. Deterministically unit-testable with a mock LLM and no network.
+一个自研的 Coding Agent Harness（Node.js/TypeScript）：手写 agent 主循环 + 可注入 Mock 的 LLM 层、shell 命令护栏 + 人工审批（HITL）、结构化 TDD 反馈闭环。可用 mock LLM 在无网络下确定性单测。
 
-## Install & Run (Docker)
+## 安装与运行（Docker）
 \`\`\`
 docker build -t ai4se-safe-tdd-harness .
 docker run -p 8080:8080 -e MASTER_PASSWORD=... -v "$PWD/workspace":/workspace ai4se-safe-tdd-harness
 \`\`\`
-Open http://localhost:8080. Configure your API key in the panel (stored AES-256-GCM encrypted; master password via MASTER_PASSWORD env or prompted).
+打开 http://localhost:8080。在面板配置 API key（AES-256-GCM 加密存储；主密码经 MASTER_PASSWORD 环境变量或交互提示输入）。
 
-## Local dev
+## 本地开发
 \`\`\`
 npm ci
-npm test          # all unit tests
-npm run demo      # §A.6 mechanism demo
+npm test          # 全部单元测试
+npm run demo      # §A.6 机制演示
 npm run build && node dist/index.js --web
 \`\`\`
 
-## API key safety
-- Never passed on the command line (would enter shell history).
-- Stored encrypted at ~/.ai4se/creds.enc (AES-256-GCM), unlocked by a master password.
-- .env is a plaintext fallback only; a warning is logged when it is used.
-- status() never echoes the plaintext key.
+## API key 安全
+- 绝不经命令行传递（会进入 shell history）。
+- 加密落盘 ~/.ai4se/creds.enc（AES-256-GCM），由主密码解锁。
+- .env 仅作明文 fallback；使用时会告警。
+- status() 绝不回显明文 key。
 
-## Limitations
-- Linux/amd64 primary target; Windows/mac need local build.
-- Single task at a time (no concurrency).
-- FeedbackClassifier robustly recognizes Jest assertion/syntax failures; other runners fall back to 'other'.
+## 已知限制
+- 主目标平台 Linux/amd64；Windows/mac 需本地构建。
+- 单任务，不并发。
+- FeedbackClassifier 稳健识别 Jest 的 assertion/syntax 失败；其它 runner 回退 'other'。
 
 ## CI
-.gitlab-ci.yml defines a unit-test job (npm ci && npm test) plus SAST and secret-detection.
+.gitlab-ci.yml 定义了 unit-test job（npm ci && npm test），并含 SAST 与 secret-detection。
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **步骤 4：运行测试，验证通过**
 
-Run: `npx jest test/ci.test.ts && npm test`
-Expected: PASS (ci.test asserts Dockerfile + unit-test job; full suite green).
+运行：`npx jest test/ci.test.ts && npm test`
+预期：PASS（ci.test 校验 Dockerfile + unit-test job；全量测试绿）。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add Dockerfile .gitlab-ci.yml README.md src/index.ts test/ci.test.ts
@@ -2192,19 +2192,19 @@ git commit -m "feat(dist): Dockerfile, CI unit-test job, README"
 
 ---
 
-## Self-Review Notes
+## 自检笔记
 
-Run after writing the plan (done inline):
+写完计划后运行（已内联完成）：
 
-1. **Spec coverage:** SPEC §3.1 ActionProtocol → T3; §3.2 LLMProvider/Mock → T4/T13; §3.3 ToolRegistry+tools → T5/T6; §3.4 Guardrail → T7; §3.5 ApprovalGateway → T11/T14; §3.6 FeedbackClassifier → T8; §3.7 AgentLoop → T12; §3.8 MemoryStore → T9; §3.9 CredentialStore → T10; §3.10 WebServer+frontend → T15/T16; §A.6 demo → T17; §7.2 Docker → T18; CI unit-test → T18. All SPEC sections mapped. ✓
-2. **Placeholder scan:** No TBD/TODO. All steps carry concrete code/commands. ✓
-3. **Type consistency:** `LLMProvider.complete` returns `{text, stopReason}` (T4, T13, T12 consistent). `Guardrail.assess(action)` returns `GuardrailVerdict` (T7, T12). `ApprovalGateway.request(action, reasons)` returns `ApprovalDecision` (T11, T14, T12). `FeedbackClassifier.parse(obs)` returns `Feedback` (T8, T12, T17). `AgentLoop.run()` returns `{haltReason, iterations}` (T12, T15, T17, T18). `EventStore`/`EventSink` consistent (T12, T15, T16). `ToolRegistry.dispatch(action, ctx)` (T5, T12). ✓
-4. **Gaps fixed:** T18 `src/index.ts` rewrite preserves `greet` export so T1 smoke test stays green — noted explicitly. Static-asset path under ts-jest verified (`__dirname` resolves to `src/web`). ✓
+1. **spec 覆盖：** SPEC §3.1 ActionProtocol → 任务 3；§3.2 LLMProvider/Mock → 任务 4/13；§3.3 ToolRegistry+tools → 任务 5/6；§3.4 Guardrail → 任务 7；§3.5 ApprovalGateway → 任务 11/14；§3.6 FeedbackClassifier → 任务 8；§3.7 AgentLoop → 任务 12；§3.8 MemoryStore → 任务 9；§3.9 CredentialStore → 任务 10；§3.10 WebServer+前端 → 任务 15/16；§A.6 演示 → 任务 17；§7.2 Docker → 任务 18；CI unit-test → 任务 18。SPEC 全部章节均有任务对应。✓
+2. **占位符扫描：** 无 TBD/TODO。每个步骤均含具体代码/命令。✓
+3. **类型一致性：** `LLMProvider.complete` 返回 `{text, stopReason}`（任务 4/13/12 一致）。`Guardrail.assess(action)` 返回 `GuardrailVerdict`（任务 7/12）。`ApprovalGateway.request(action, reasons)` 返回 `ApprovalDecision`（任务 11/14/12）。`FeedbackClassifier.parse(obs)` 返回 `Feedback`（任务 8/12/17）。`AgentLoop.run()` 返回 `{haltReason, iterations}`（任务 12/15/17/18）。`EventStore`/`EventSink` 一致（任务 12/15/16）。`ToolRegistry.dispatch(action, ctx)`（任务 5/12）。✓
+4. **缺口修复：** 任务 18 重写 `src/index.ts` 保留 `greet` 导出，使任务 1 的 smoke test 仍绿——已显式声明。ts-jest 下静态资源路径已验证（`__dirname` 解析到 `src/web`）。✓
 
 ---
 
-## Dependencies / Parallelism
+## 依赖与并行度
 
-- Serial backbone: T1 → T2 → (T3, T4, T9 parallel) → (T5 → T6) → (T7, T8, T10, T11 parallel) → T12 → (T13, T14 parallel) → T15 → T16 → T17 → T18.
-- Parallelizable in isolated worktrees (T4): T3‖T4‖T9 after T2; T7‖T8‖T10‖T11 after T6; T13‖T14 after T12.
-- Per SPEC §12 T4 trim: open one worktree per milestone (foundation / mechanisms / loop / web / dist), not per task.
+- 串行主干：任务 1 → 任务 2 →（任务 3、4、9 可并行）→（任务 5 → 任务 6）→（任务 7、8、10、11 可并行）→ 任务 12 →（任务 13、14 可并行）→ 任务 15 → 任务 16 → 任务 17 → 任务 18。
+- 可在隔离 worktree 并行（任务 4）：任务 2 后 任务 3‖4‖9；任务 6 后 任务 7‖8‖10‖11；任务 12 后 任务 13‖14。
+- 按 SPEC §12 T4 裁剪：按里程碑（脚手架 / 机制 / 主循环 / web / 分发）开一个 worktree，不按任务开。
