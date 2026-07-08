@@ -18,20 +18,35 @@ function action(tool: string, args: any): string {
 
 async function tmp(): Promise<string> { return fs.mkdtemp(path.join(os.tmpdir(), 'loop-')); }
 
+// ponytail: runner is a .js file invoked by `node run-tests.js` — no Unix `sh` dependency,
+// no cmd-vs-bash quoting. `node` is the only host requirement (guaranteed: this is a Node project).
+// Resolves cross-platform on Windows PowerShell, Git Bash, and Linux CI.
+const RUNNER_PASS_WHEN_CORRECT = `const a = require('./add.js');
+if (a(2, 3) !== 5) {
+  console.error('FAIL  ./add.test.js');
+  console.error('  expect(received).toBe(expected)');
+  console.error('  Expected: 5');
+  console.error('  at add.test.js:4:17');
+  process.exit(1);
+}
+process.exit(0);
+`;
+
+const RUNNER_ALWAYS_FAIL = `console.error('FAIL  ./add.test.js');
+console.error('  expect(received).toBe(expected)');
+console.error('  at add.test.js:4:17');
+process.exit(1);
+`;
+
 test('full green loop: write buggy -> test fails -> feedback -> fix -> green -> finish', async () => {
   const cwd = await tmp();
-  // 靶：一个"测试脚本"，仅当 add.js 正确返回和时通过
-  await fs.writeFile(path.join(cwd, 'run-tests.sh'),
-    process.platform === 'win32'
-      ? `node -e "const a=require('./add.js');if(a(2,3)!==5){console.error('FAIL  ./add.test.js');console.error('  expect(received).toBe(expected)');console.error('  Expected: 5');console.error('  at add.test.js:4:17');process.exit(1)}else process.exit(0)"`
-      : `node -e "const a=require('./add.js');if(a(2,3)!==5){console.error('FAIL  ./add.test.js\\\\n  expect(received).toBe(expected)\\\\n  Expected: 5\\\\n  at add.test.js:4:17');process.exit(1)}else process.exit(0)"`
-  );
+  await fs.writeFile(path.join(cwd, 'run-tests.js'), RUNNER_PASS_WHEN_CORRECT);
   const reg = new ToolRegistry([...fileTools, ...shellTools]);
   const llm = new ScriptedMock([
     action('write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a-b;\n' }), // 有 bug
-    action('run_tests', { command: 'sh run-tests.sh' }),
+    action('run_tests', { command: 'node run-tests.js' }),
     action('write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a+b;\n' }), // 修复
-    action('run_tests', { command: 'sh run-tests.sh' }),
+    action('run_tests', { command: 'node run-tests.js' }),
     action('finish', {}),
   ]);
   const loop = new AgentLoop({
@@ -68,13 +83,12 @@ test('guardrail halts-to-approval then deny re-injects as observation', async ()
 
 test('stuck halt: same assertion point failing twice -> HALTED(stuck)', async () => {
   const cwd = await tmp();
-  await fs.writeFile(path.join(cwd, 'run-tests.sh'),
-    `node -e "console.error('FAIL  ./add.test.js\\\\n  expect(received).toBe(expected)\\\\n  at add.test.js:4:17');process.exit(1)"`);
+  await fs.writeFile(path.join(cwd, 'run-tests.js'), RUNNER_ALWAYS_FAIL);
   const reg = new ToolRegistry([...fileTools, ...shellTools]);
   const llm = new ScriptedMock([
-    action('run_tests', { command: 'sh run-tests.sh' }),
-    action('run_tests', { command: 'sh run-tests.sh' }),
-    action('run_tests', { command: 'sh run-tests.sh' }),
+    action('run_tests', { command: 'node run-tests.js' }),
+    action('run_tests', { command: 'node run-tests.js' }),
+    action('run_tests', { command: 'node run-tests.js' }),
   ], true);
   const loop = new AgentLoop({
     llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([]),

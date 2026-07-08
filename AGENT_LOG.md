@@ -313,3 +313,20 @@
   - **PLAN 又一次自带 bug（field/method 同名），RED→GREEN 当场暴露**：任务 14 的 `pending` Map 字段与 `pending()` 方法同名，TS 让字段遮蔽方法。这是阶段 11（任务 8 const-vs-class）后 PLAN 第二处 impl bug。处置原则不变：测试是跨任务契约（web 路由/前端都用 `pending()`），修 impl 不削测试。印证"先看红再写绿"的价值——文档审读看不出命名遮蔽，编译器/测试当场报错才暴露。
   - **fetch 注入是"无网单测"的最小依赖倒置**：OpenAICompatProvider 不 mock 全局 `fetch`，而是构造期注入 `opts.fetch ?? fetch`——生产用全局 fetch、测试用 fakeFetch。这让"4xx→AuthError"成为可断言不变量（`rejects.toThrow(/auth|401/i)`）而非依赖真实网络的猜测。SPEC §4.4 "替换为 Mock 后可确定性单测、无网络"在此被坐实。
 - **下一步**：推送 `feat/06-core-loop` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务（15 WebServer 起的 http 轮询路由/静态前端/机制演示/Docker+CI）待用户下达。内核中枢 AgentLoop 已就位，后续任务 15 WebServer 将把 `HttpApprovalGateway` + `EventStore` + `AgentLoop` 接成浏览器可观测/可审批的面板，任务 17 演示将复现 §A.6 三幕（护栏+HITL / 反馈自修正 / 混淆绕过+stuck）。
+
+---
+
+## 2026-07-08 · 阶段 14：hotfix — feat/06-core-loop 合并后 agentLoop 集成测试跨平台化（直接推 main）
+
+- **触发的技能**：`karpathy-guidelines`（root-cause not symptom / surgical）+ `ponytail`（stdlib 优先：用 `node` 而非 `sh`；最短 diff）。
+- **问题**：用户在标准 Windows PowerShell 跑 `npx jest test/agentLoop.test.ts`，`expect(res.haltReason).toBe('finish')` 失败、`Received: 'stuck'`。feat/06 已在网页端合并入 main。
+- **根因（非 AgentLoop bug，是测试自身绑定宿主机 shell）**：`test/agentLoop.test.ts` 把 runner 写成 `run-tests.sh`、用 `action('run_tests', { command: 'sh run-tests.sh' })` 调起。PowerShell/cmd 的 PATH 无 Unix `sh`→`run_tests` 的 `exec('sh run-tests.sh')` 失败、`exitCode≠0`、stderr 为 "'sh' 不是内部或外部命令"（无 Jest `●`/`expect()`/`at file:line` 特征）→`FeedbackClassifier` 降级 `errorType:'other'`→stuck 判定 key 相同→连续两轮误触安全阀 `HALTED(stuck)`。AgentLoop 与 FeedbackClassifier 行为均符合规约，错在测试依赖了非保证存在的宿主可执行文件 `sh`。
+- **复现（忠实模拟 PowerShell）**：在 Git Bash 里直接 `PATH="C:\Windows\..."` 会被 MSYS 把盘符 `C:` 的冒号当 Unix `:` 分隔符，PATH 被拆成 `C;D:\Windows\...` 损坏、连 `node` 都找不到——这是模拟环境的假象，非忠实。改用 `cmd.exe //c "set \"PATH=C:\Windows\System32;C:\Windows;C:\Program Files\nodejs\" && node node_modules\jest\bin\jest.js ..."` 在 cmd 原生层设 PATH（node 在 PATH、sh 不在），忠实复现 `Received: "stuck"`，与用户报告逐字一致。
+- **修复**：`test/agentLoop.test.ts` 把 runner 从 `run-tests.sh`（`sh` 执行）改为 `run-tests.js`（`node run-tests.js` 直接执行）；runner 产出 stderr 内容不变（仍是 `FAIL  ./add.test.js` / `expect(received).toBe(expected)` / `at add.test.js:4:17`），仅载体从 shell 脚本改为 JS 文件、调用从 `sh` 改为 `node`；删去 `process.platform` 分支（不再需要 cmd-vs-bash 引号差异）。`node` 是该 Node 项目唯一且保证存在的宿主要求——任何能跑 `npx jest` 的环境必在 PATH 有 `node`，故 100% 跨平台（Windows PowerShell / Git Bash / Linux CI）。
+- **验证**：忠实 sh-less 模拟下 `test/agentLoop.test.ts` 3/3 绿、全量 17 suites / 43 tests 绿；正常 Git Bash 环境亦 3/3 绿。
+- **环境噪声（预先存在，非本次引入）**：`.claude/worktrees/feat+01-infra/test/` 旧 worktree 残留被 jest glob `**/test/**/*.test.ts` 命中，致主仓 suite 数虚高（14→17、tests 37→43，多出 smoke/actionProtocol/types 三套重复）。本次不处置（surgical：超出修复范围，且 feat/01-infra 分支未必已合并，删除有丢工作风险）；建议后续清理该 worktree 或在 `jest.config.js` 加 `testPathIgnorePatterns: ['<rootDir>/.claude/worktrees/']`。
+- **教训**：
+  - **测试不得绑定宿主机特定 shell**：集成测试用 `sh` 会让 Windows 原生环境（PowerShell/cmd 无 sh）一律失败，且失败信号经反馈闭环被误判成 `'other'`→stuck，把"测试基础设施缺失"伪装成"agent 卡死"。跨平台测试的最低线：只依赖项目本身保证存在的可执行文件（此处 `node`）。这印证 ponytail 阶梯第 3 rung（stdlib/native 优先）：`node` 是 native 保证项，`sh` 不是。
+  - **stuck 安全阀会放大测试基础设施故障**：stuck 判定逻辑本身正确（连续两轮同断言点），但当 runner 根本没跑起来时，每轮都是同样的 `'other'` 失败→key 相同→必然两轮触发 stuck。说明安全阀的"同 key"前提是"runner 真的在跑且产出可分类反馈"——前提不成立时它会误拉闸。这是反馈闭环的边界：它防 agent 死循环，不防测试环境缺失，后者靠测试自身跨平台性保证。
+  - **Git Bash 模拟 PowerShell 的 PATH 陷阱**：`PATH="C:\Windows\..."` 会被 MSYS 把 `C:` 的冒号当 Unix 分隔符、PATH 损坏成 `C;D:\...`，连 node 都找不到——非被测代码问题，是模拟环境假象。忠实模拟须 `cmd.exe //c "set PATH=...&& ..."` 在 cmd 原生层设 PATH。教训：验证跨平台时，模拟环境本身要先验证忠实性，否则会追错方向（一度以为 `node run-tests.js` 也依赖 sh，实则是模拟 PATH 损坏）。
+- **下一步**：提交 `fix(test): make loop integration tests platform-agnostic`（test + AGENT_LOG）并直接推送远端 main（用户显式授权直推 main，跳过 MR）；剩余任务 15 WebServer 起待用户下达。
