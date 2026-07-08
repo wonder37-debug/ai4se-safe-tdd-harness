@@ -112,7 +112,7 @@ export function greet(name: string): string {
   "scripts": {
     "test": "jest",
     "demo": "jest demo/",
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs');if(fs.existsSync('src/web/public'))fs.cpSync('src/web/public','dist/web/public',{recursive:true})\"",
     "start": "node dist/index.js"
   },
   "engines": { "node": ">=20" },
@@ -120,7 +120,7 @@ export function greet(name: string): string {
 }
 ```
 
-`tsconfig.json`:
+`tsconfig.json`（`rootDir:"src"` + `include:["src"]`，使 `dist/` 只含 src 产物；`test/`、`demo/` 由 ts-jest 独立编译，不进 `dist/`，与 Dockerfile 只 COPY src 一致）:
 ```json
 {
   "compilerOptions": {
@@ -130,11 +130,12 @@ export function greet(name: string): string {
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "rootDir": ".",
+    "rootDir": "src",
     "outDir": "dist",
     "types": ["node", "jest"]
   },
-  "include": ["src", "test", "demo"]
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
 }
 ```
 
@@ -154,7 +155,7 @@ CLAUDE_API_KEY=
 API_BASE_URL=
 ```
 
-向 `.gitignore` 追加：`dist/` 与 `*.log` 各占一行（`.env` 与 `node_modules/` 已存在）。
+`.gitignore`：**确认已包含** `dist/` 与 `*.log`（本仓库前期提交已添加，见第 3-4 行）；若缺失则补。勿重复追加。
 
 - [ ] **步骤 4：装依赖并运行测试**
 
@@ -183,7 +184,7 @@ git commit -m "chore: scaffold node+ts+jest project with smoke test"
 
 `test/types.test.ts`:
 ```ts
-import type { Action, Message, Observation, Feedback, GuardrailVerdict } from '../src/types';
+import type { Action, Message, Observation, Feedback, GuardrailVerdict, LoopState, Approval } from '../src/types';
 
 test('types: Action shape is constructable', () => {
   const a: Action = { tool: 'run_shell', args: { command: 'ls' } };
@@ -191,10 +192,11 @@ test('types: Action shape is constructable', () => {
   const o: Observation = { ok: true, exitCode: 0 };
   const f: Feedback = { errorType: 'assertion', failedTests: ['t'], evidence: 'e', hint: 'h' };
   const g: GuardrailVerdict = { severity: 'none', reasons: [] };
+  const st: LoopState = 'HALTED';
+  const ap: Approval = { id: '1', action: a, reasons: [], decision: 'approve', reason: 'ok' };
   expect(a.tool).toBe('run_shell');
-  expect(m.role).toBe('observation');
-  expect(o.ok).toBe(true);
-  expect(f.errorType).toBe('assertion');
+  expect(st).toBe('HALTED');
+  expect(ap.decision).toBe('approve');
   expect(g.severity).toBe('none');
 });
 ```
@@ -237,6 +239,8 @@ export interface GuardrailVerdict { severity: Severity; reasons: string[]; }
 
 export interface ApprovalRequest { id: string; action: Action; reasons: string[]; }
 export interface ApprovalDecision { decision: 'approve' | 'deny'; reason: string; }
+export type Approval = ApprovalRequest & Partial<ApprovalDecision>;
+export type LoopState = 'RUNNING' | 'APPROVAL_PENDING' | 'EXECUTING' | 'HALTED';
 
 export type EventType = 'action' | 'observation' | 'approval_request' | 'approval_decision' | 'halt';
 export interface Event { id: number; type: EventType; payload: any; iter: number; }
@@ -286,6 +290,10 @@ test('returns empty array when no fence present', () => {
 test('ignores malformed JSON block (returns empty, does not throw)', () => {
   expect(ActionProtocol.parse('```action\n{not json}\n```')).toEqual([]);
 });
+
+test('rejects unknown tool name (runtime guard)', () => {
+  expect(ActionProtocol.parse('```action\n{"tool":"frob","args":{}}\n```')).toEqual([]);
+});
 ```
 
 - [ ] **步骤 2：运行测试，验证失败**
@@ -297,9 +305,10 @@ test('ignores malformed JSON block (returns empty, does not throw)', () => {
 
 `src/protocol/actionProtocol.ts`:
 ```ts
-import { Action } from '../types';
+import { Action, ToolName } from '../types';
 
 const FENCE = /```action\s*([\s\S]*?)```/g;
+const TOOL_NAMES = new Set<string>(['read_file', 'write_file', 'list_dir', 'run_shell', 'run_tests', 'finish']);
 
 export const ActionProtocol = {
   parse(text: string): Action[] {
@@ -308,9 +317,10 @@ export const ActionProtocol = {
     while ((m = FENCE.exec(text)) !== null) {
       const raw = m[1].trim();
       try {
-        const obj = JSON.parse(raw);
-        if (obj && typeof obj.tool === 'string' && obj.args && typeof obj.args === 'object') {
-          out.push({ tool: obj.tool, args: obj.args });
+        const obj = JSON.parse(raw); // any；obj.tool 为 any，赋 ToolName 不报编译错（GAP-6 评估：原判断有误）
+        if (obj && typeof obj.tool === 'string' && obj.args && typeof obj.args === 'object'
+            && TOOL_NAMES.has(obj.tool)) { // 运行时拦截非法工具名
+          out.push({ tool: obj.tool as ToolName, args: obj.args });
         }
       } catch {
         // 畸形块：跳过，不抛
@@ -324,7 +334,7 @@ export const ActionProtocol = {
 - [ ] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/actionProtocol.test.ts`
-预期：PASS（3 个测试）。
+预期：PASS（4 个测试）。
 
 - [ ] **步骤 5：提交**
 
@@ -483,7 +493,7 @@ test('read_file on missing file returns ok:false with error', async () => {
 
 - [ ] **步骤 3：写最小实现**
 
-`src/tools/tool.ts`:
+`src/tools/tool.ts`（`ToolContext` 仅 `cwd`：按 SPEC §3.3 裁剪，`MemoryStore`/`CredentialStore` 由 `AgentLoop` 持有，不注入；`error` 字段统一填 `e instanceof Error ? e.message : String(e)`，避免非 Error 对象产出 `[object Object]`）:
 ```ts
 import { Action, Observation } from '../types';
 
@@ -492,6 +502,10 @@ export interface ToolContext { cwd: string; }
 export interface Tool {
   name: string;
   execute(args: Record<string, any>, ctx: ToolContext): Promise<Observation>;
+}
+
+function errMsg(e: any): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
 export class ToolRegistry {
@@ -504,7 +518,7 @@ export class ToolRegistry {
     try {
       return await t.execute(action.args, ctx);
     } catch (e: any) {
-      return { ok: false, error: String(e?.message ?? e) };
+      return { ok: false, error: errMsg(e) };
     }
   }
 }
@@ -654,12 +668,13 @@ export const run_tests: Tool = {
       const { stdout, stderr } = await pexec(cmd, { cwd: ctx.cwd, maxBuffer: 1e6, timeout: 60000 });
       return { ok: true, stdout, stderr, exitCode: 0 };
     } catch (e: any) {
+      const timedOut = e?.killed && e?.signal === 'SIGTERM'; // exec 超时 → killed + SIGTERM
       return {
         ok: false,
         stdout: e.stdout ?? '',
         stderr: e.stderr ?? '',
         exitCode: typeof e.code === 'number' ? e.code : -1,
-        error: String(e?.message ?? e),
+        error: timedOut ? 'timeout' : (e instanceof Error ? e.message : String(e)),
       };
     }
   },
@@ -979,6 +994,8 @@ export const JestParser: Parser = {
 
 运行：`npx jest test/feedbackClassifier.test.ts`
 预期：PASS（3 个测试）。
+
+> **timeout 降级路径（GAP-2）**：`run_tests` 超时 → tool 返回 `{exitCode:-1, error:'timeout', stderr:''}`；`FeedbackClassifier.parse` 调 `JestParser.parse` 找不到 SyntaxError/失败块/expect 行 → 返回 `errorType:'other'`。即 timeout→'other' 的降级发生在 `FeedbackClassifier`，与 SPEC §3.3 一致。
 
 - [ ] **步骤 5：提交**
 
@@ -1491,6 +1508,9 @@ export class AgentLoop {
 - [ ] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/agentLoop.test.ts`
+
+> **LoopState 可追溯性（GAP-3）**：`types.ts` 导出 `LoopState = 'RUNNING'|'APPROVAL_PENDING'|'EXECUTING'|'HALTED'`。`AgentLoop` 内部以控制流位置编码这四态（`while` 体=RUNNING、`await approval.request`=APPROVAL_PENDING、`dispatch`=EXECUTING、`return`=HALTED），不维护运行时 state 变量——`LoopState` 仅作 SPEC §3.7 规约可追溯的类型层存在。
+
 预期：PASS（3 个测试）。若 Windows 下 `sh run-tests.sh` 失败，本仓库 shell 自带 Git Bash 的 `sh`，应在 PATH 中；测试已按 `process.platform` 分支处理。
 
 - [ ] **步骤 5：提交**
@@ -2086,9 +2106,8 @@ COPY package*.json ./
 RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
-COPY demo ./demo
 RUN npm run build
-# 把 public 静态资源带进 dist
+# public 静态资源由 build 脚本的 cpSync 带入 dist/web/public；下方 cp 为冗余兜底
 RUN cp -r src/web/public dist/web/public 2>/dev/null || true
 
 # stage 2: prod

@@ -51,9 +51,9 @@
 
 ### 3.3 ToolRegistry（工具分发）
 - 注册工具：`read_file / write_file / list_dir / run_shell / run_tests / finish`。
-- 每个 tool：`{name, schema, execute(args, ctx): Promise<Observation>}`，`ctx` 含 `cwd`、`MemoryStore`、`CredentialStore`。
+- 每个 tool：`{name, schema, execute(args, ctx): Promise<Observation>}`，`ctx` 含 `cwd`；`MemoryStore`/`CredentialStore` 由 `AgentLoop` 直接持有，**不注入 `ToolContext`**（当前无 tool 需要它们，YAGNI 裁剪；后续若有 tool 需凭据/记忆，再扩 `ctx`）。
 - `run_shell`/`run_tests` 执行前先过 `Guardrail.assess`（由主循环调用，非 tool 内部）。
-- 边界：`read_file` 越界（如二进制大文件）→ 截断并标注；`run_tests` 超时 60s → `errorType:'timeout'`→'other'。
+- 边界：`read_file` 越界（如二进制大文件）→ 截断并标注；`run_tests` 超时 60s → tool 返回 `error:'timeout'`、`exitCode:-1`，由 `FeedbackClassifier` 归类为 `'other'`（降级发生在 FeedbackClassifier，非 tool）。
 - 错误处理：tool 抛错 → 转 `Observation{ok:false, error}` 回灌。
 
 ### 3.4 Guardrail（治理护栏 — 主贡献维度 1）
@@ -80,7 +80,7 @@
 - Parser 接口可插拔（`{parse(stdout,stderr): Feedback}`），2 周内只实现 `JestParser`。
 
 ### 3.7 AgentLoop（自研主循环状态机）
-- 状态：`RUNNING / APPROVAL_PENDING / EXECUTING / HALTED`。
+- 状态：`RUNNING / APPROVAL_PENDING / EXECUTING / HALTED`（`types.ts` 导出 `LoopState` 联合型作规约可追溯；循环内部以控制流位置编码这些状态）。
 - 编排：见 §5 数据流。停机条件：`finish` 动作 / 绝对迭代上限 `MAX_ABS=20` / 连续 2 轮同一 `assertion.file:line` 失败（`HALTED(stuck)`）/ provider 不可恢复错误。
 - 边界：每轮迭代编号、状态、action、observation 全程记 `AGENT_LOG.md` 与内存事件队列。
 - 错误处理：任何未预期异常 → `HALTED(error)` 并把错误写事件流。
@@ -185,8 +185,8 @@
 - `Observation = {ok: boolean, stdout?, stderr?, exitCode?, error?, content?}`。
 - `Feedback = {errorType: 'assertion'|'syntax'|'other', failedTests: string[], assertion?: {file,line,snippet}, evidence: string, hint: string}`。
 - `GuardrailVerdict = {severity: 'none'|'low'|'high', reasons: string[]}`。
-- `Approval = {id, action, reasons, decision?, reason?}`。
-- `Event = {id, type: 'action'|'observation'|'approval_request'|'halt', payload, iter}`。
+- `Approval = ApprovalRequest & Partial<ApprovalDecision>`（实现侧拆为 `ApprovalRequest{ id, action, reasons }` 与 `ApprovalDecision{ decision, reason }` 两型，组合还原本统一型）。
+- `Event = {id, type: 'action'|'observation'|'approval_request'|'approval_decision'|'halt', payload, iter}`。`approval_decision` 为 PLAN 扩展（前端轮询审批结果用）；`payload` 对应：`action`→`Action`、`observation`→`Observation|Feedback`、`approval_request`→`ApprovalRequest`、`approval_decision`→`ApprovalDecision`、`halt`→`{reason}`。
 
 ---
 

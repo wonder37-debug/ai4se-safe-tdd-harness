@@ -120,3 +120,23 @@
   - 跨任务类型一致性要专门做一次 Self-Review 扫描（如 `complete` 返回 `{text,stopReason}` 在 T4/T13/T12 三处须一致），单任务内一致不够。
   - 写 PLAN 时若一个 task 会改另一个 task 已交付的产物（如 T18 重写 `src/index.ts` 但 T1 smoke test 依赖 `greet`），必须在计划里显式声明"保留 export 不破坏前序测试"。
 - **下一步**：待用户选执行模式（subagent-driven / inline）后，调用对应子技能按 task 推进；每完成一 task 在本日志追加节点 + 在 PLAN.md 标 commit hash。
+
+---
+
+## 2026-07-08 · 阶段 7：§4.5 冷启动验证 + 规约修订
+
+- **触发的流程**：§4.5 自我验证（非 Superpowers 七步内，但通用要求硬交付）。
+- **task 编号**：CS-1。
+- **方法**：用一个**不同**的 agent、全新 session、不导入本会话上下文，仅凭 `SPEC.md`+`PLAN.md` 试推任务 1/2。产出一份冷启动规约审计报告（3 Stuck + 6 Gap + 7 假设）。
+- **第二个 agent 暴露的缺陷**：STUCK-1（tsconfig rootDir 与 Dockerfile 构建矛盾）、STUCK-2（ToolContext 缺 memory/creds）、STUCK-3（Approval 型拆分与 SPEC §6 不一致）、GAP-1（EventType 多 approval_decision）、GAP-2（timeout 降级点未定义）、GAP-3（LoopState 缺）、GAP-4（.gitignore 重复追加）、GAP-5（error 语义未定义）、GAP-6（ActionProtocol 的 ToolName 疑似 strict 编译错）。
+- **agent（主）评估**：8 处成立、1 处误判——**GAP-6 不成立**：`JSON.parse` 返回 `any`，`obj.tool` 为 `any`，赋给 `ToolName` 在 strict 下不报编译错。但仍加运行时 `TOOL_NAMES.has()` guard + `as ToolName` + 测试，作健壮性加固。
+- **修订（commit 见本次提交）**：
+  - SPEC §3.3（ToolContext 裁剪 + timeout 降级点）、§3.7（LoopState 可追溯）、§6（Approval 复合型 + EventType 补 approval_decision + payload 映射）。
+  - PLAN 任务 1（tsconfig rootDir:src + include:src + build 脚本补 cpSync + .gitignore 措辞）、任务 2（types 加 LoopState/Approval + 测试覆盖）、任务 3（TOOL_NAMES guard + 测试）、任务 5（errMsg helper + ToolContext 注）、任务 6（run_tests 超时检测）、任务 8（timeout→other 注）、任务 12（LoopState 注）、任务 18（Dockerfile 移除冗余 COPY demo）。
+  - 新建 `SPEC_PROCESS.md`（§4.5 过程文档，含修订前后 7 组 diff）。
+- **人工干预**：用户提供第二个 agent 的审计报告，要求我"审核评估后修正并记入 SPEC_PROCESS.md"。
+- **教训**：
+  - spec 清晰度被严重高估——主 agent 与 brainstorming 沉淀的隐性共识（如"dist 只含 src"）没写进 SPEC/PLAN，冷启动 agent 在每个隐性假设处受阻。
+  - 跨节一致性须专门扫描（STUCK-2/3、GAP-1 都是 SPEC 一节说 X、PLAN 另一节做 Y）。
+  - 冷启动 agent 也会误判（GAP-6 编译判断），逐条复核技术正确性而非盲收。
+- **下一步**：SPEC/PLAN 已对齐，可进入实现；待用户选执行模式。
