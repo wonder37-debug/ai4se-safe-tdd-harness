@@ -7,3 +7,6 @@ dist/
 CLAUDE.md
 AI4SE 期末项目 · 通用要求（所有项目必读）.md
 AI4SE_Final_Project_A_Coding_Agent_Harness.md
+
+# Claude Code 本地会话数据与 worktree 隔离区，绝不纳入仓库
+.claude/
