@@ -1226,7 +1226,7 @@ git commit -m "feat(creds): EncryptedFileStore AES-256-GCM"
 **接口：**
 - 产出：`ApprovalGateway` 接口（`request(action, reasons): Promise<ApprovalDecision>`）、`MockApprovalGateway`。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/approvalGateway.test.ts`:
 ```ts
@@ -1243,12 +1243,12 @@ test('returns queued decisions in order', async () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/approvalGateway.test.ts`
 预期：FAIL——模块未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/approval/approvalGateway.ts`:
 ```ts
@@ -1268,12 +1268,12 @@ export class MockApprovalGateway implements ApprovalGateway {
 }
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/approvalGateway.test.ts`
 预期：PASS（1 个测试）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `240f296`
 
 ```bash
 git add src/approval/approvalGateway.ts test/approvalGateway.test.ts
@@ -1291,7 +1291,7 @@ git commit -m "feat(approval): ApprovalGateway interface + MockApprovalGateway"
 - 消费：`LLMProvider`、`ToolRegistry`（+文件/shell 工具）、`Guardrail`、`ApprovalGateway`、`FeedbackClassifier`、`MemoryStore`、`ActionProtocol`。
 - 产出：`AgentLoop`（`run(): Promise<{haltReason, iterations}>`）、`EventSink`。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/agentLoop.test.ts`:
 ```ts
@@ -1384,12 +1384,12 @@ test('stuck halt: same assertion point failing twice -> HALTED(stuck)', async ()
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/agentLoop.test.ts`
 预期：FAIL——模块未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/loop/eventSink.ts`:
 ```ts
@@ -1505,7 +1505,7 @@ export class AgentLoop {
 }
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/agentLoop.test.ts`
 
@@ -1513,7 +1513,7 @@ export class AgentLoop {
 
 预期：PASS（3 个测试）。若 Windows 下 `sh run-tests.sh` 失败，本仓库 shell 自带 Git Bash 的 `sh`，应在 PATH 中；测试已按 `process.platform` 分支处理。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `f5e6068`
 
 ```bash
 git add src/loop/eventSink.ts src/loop/agentLoop.ts test/agentLoop.test.ts
@@ -1531,7 +1531,7 @@ git commit -m "feat(loop): hand-written AgentLoop state machine with integration
 - 消费：`LLMProvider`、`Message`。
 - 产出：`OpenAICompatProvider`（用全局 `fetch`；4xx → `AuthError`）。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/openaiCompat.test.ts`:
 ```ts
@@ -1556,12 +1556,12 @@ test('4xx throws AuthError', async () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/openaiCompat.test.ts`
 预期：FAIL——模块未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/llm/openaiCompat.ts`:
 ```ts
@@ -1597,12 +1597,12 @@ export class OpenAICompatProvider implements LLMProvider {
 }
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/openaiCompat.test.ts`
 预期：PASS（2 个测试，无网络——fetch 被注入）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `ad72a74`
 
 ```bash
 git add src/llm/openaiCompat.ts test/openaiCompat.test.ts
@@ -1619,7 +1619,7 @@ git commit -m "feat(llm): OpenAICompatProvider with injectable fetch"
 **接口：**
 - 产出：`HttpApprovalGateway`（按请求 id 索引的 pending resolver map；`resolve(id, decision)` 由 web 路由调用）。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/httpApprovalGateway.test.ts`:
 ```ts
@@ -1644,12 +1644,12 @@ test('unresolved request pending until resolved or denied', async () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/httpApprovalGateway.test.ts`
 预期：FAIL——模块未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/approval/httpApprovalGateway.ts`:
 ```ts
@@ -1684,12 +1684,12 @@ export class HttpApprovalGateway implements ApprovalGateway {
 }
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/httpApprovalGateway.test.ts`
 预期：PASS（2 个测试）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `cf9c4e8`
 
 ```bash
 git add src/approval/httpApprovalGateway.ts test/httpApprovalGateway.test.ts
