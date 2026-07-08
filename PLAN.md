@@ -77,7 +77,7 @@ test/                         # 每个 src 模块一个测试文件
 
 **接口：** 产出可运行的 `npm test`（jest+ts-jest）与有类型的 `src/index.ts` 入口。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/smoke.test.ts`:
 ```ts
@@ -88,12 +88,12 @@ test('smoke: jest + ts + import works', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/smoke.test.ts`
 预期：FAIL——`src/index.ts` 未导出 `greet`（文件未建 / 模块缺失）。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/index.ts`:
 ```ts
@@ -157,13 +157,13 @@ API_BASE_URL=
 
 `.gitignore`：**确认已包含** `dist/` 与 `*.log`（本仓库前期提交已添加，见第 3-4 行）；若缺失则补。勿重复追加。
 
-- [ ] **步骤 4：装依赖并运行测试**
+- [x] **步骤 4：装依赖并运行测试**
 
 运行：`npm install --save-dev typescript@5 ts-jest jest @types/jest @types/node && npm install shell-quote @types/shell-quote`
 运行：`npx jest test/smoke.test.ts`
 预期：PASS（1 个测试）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `8720329`
 
 ```bash
 git add package.json package-lock.json tsconfig.json jest.config.js .env.example .gitignore src/index.ts test/smoke.test.ts
@@ -180,7 +180,7 @@ git commit -m "chore: scaffold node+ts+jest project with smoke test"
 **接口：**
 - 产出：`Message`、`Action`、`Observation`、`Feedback`、`GuardrailVerdict`、`Approval`、`Event`（后续所有任务都用这些类型）。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/types.test.ts`:
 ```ts
@@ -201,12 +201,12 @@ test('types: Action shape is constructable', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/types.test.ts`
 预期：FAIL——`../src/types` 无导出（TS2307 / 无符号）。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/types.ts`:
 ```ts
@@ -246,12 +246,12 @@ export type EventType = 'action' | 'observation' | 'approval_request' | 'approva
 export interface Event { id: number; type: EventType; payload: any; iter: number; }
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/types.test.ts`
 预期：PASS。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `298d472`
 
 ```bash
 git add src/types.ts test/types.test.ts
@@ -269,7 +269,7 @@ git commit -m "feat(types): add core domain types"
 - 消费：`src/types` 的 `Action`。
 - 产出：`ActionProtocol.parse(text: string): Action[]`。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/actionProtocol.test.ts`:
 ```ts
@@ -296,12 +296,12 @@ test('rejects unknown tool name (runtime guard)', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/actionProtocol.test.ts`
 预期：FAIL——模块 `../src/protocol/actionProtocol` 未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/protocol/actionProtocol.ts`:
 ```ts
@@ -331,12 +331,12 @@ export const ActionProtocol = {
 };
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/actionProtocol.test.ts`
 预期：PASS（4 个测试）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `2e5a50f`
 
 ```bash
 git add src/protocol/actionProtocol.ts test/actionProtocol.test.ts

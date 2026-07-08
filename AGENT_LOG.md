@@ -140,3 +140,31 @@
   - 跨节一致性须专门扫描（STUCK-2/3、GAP-1 都是 SPEC 一节说 X、PLAN 另一节做 Y）。
   - 冷启动 agent 也会误判（GAP-6 编译判断），逐条复核技术正确性而非盲收。
 - **下一步**：SPEC/PLAN 已对齐，可进入实现；待用户选执行模式。
+
+---
+
+## 2026-07-08 · 阶段 8：executing-plans — feat/01-infra 任务 1/2/3（TDD）
+
+- **触发的技能**：`using-git-worktrees` → `karpathy-guidelines` + `ponytail` + `test-driven-development`（用户显式要求"严格 TDD"+ 系统级特化技能）。
+- **task 编号**：PLAN 任务 1（脚手架）/ 任务 2（核心类型）/ 任务 3（ActionProtocol 解析器）。
+- **关键 context 配置**：worktree `feat/01-infra`（路径 `.claude/worktrees/feat+01-infra`），分支从 main 切出；全程在该隔离工作区开发，未触碰主 checkout。
+- **worktree 创建细节**：用原生 `EnterWorktree` 工具（技能 Step 1a 优先级），但工具按安全规则把分支名 `feat/01-infra` 改写为 `worktree-feat+01-infra`（`/`→`+` + `worktree-` 前缀）。用户明确要求分支名 `feat/01-infra`，故在 worktree 内 `git branch -m feat/01-infra` 重命名——`feat/01-infra` 是合法 git ref 名（斜杠允许），重命名不改目录、不破坏 worktree 关联。
+- **关键 prompt**：用户分两轮下达——轮 1 仅任务 1（脚手架 TDD 绿屏即 commit 并停）；轮 2 任务 2+3 串行 TDD，每任务独立 commit，完成后更新 PLAN/AGENT_LOG 并做独立 docs commit。
+- **TDD 执行（每任务 红→绿→重构）**：
+  - 任务 1：RED `test/smoke.test.ts` → `npx jest` 报 `TS2307 Cannot find module '../src/index'`（feature 缺失，正确失败）→ 配置工具链（package.json/tsconfig/jest.config，属 TDD 例外）+ 装依赖（TS5/ts-jest/jest/@types + shell-quote）→ GREEN 写一行 `greet` → PASS（1 test）。
+  - 任务 2：RED `test/types.test.ts` → `TS2307 '../src/types'` → GREEN 写 `src/types.ts`（SPEC §6 全部数据模型，含 `LoopState`/`Approval` 复合型/`EventType` 含 `approval_decision`，对齐阶段 7 冷启动修订）→ PASS（1 test）。
+  - 任务 3：RED `test/actionProtocol.test.ts`（4 用例：单围栏/无围栏/畸形 JSON/未知工具名）→ `TS2307 '../src/protocol/actionProtocol'` → GREEN 写 `src/protocol/actionProtocol.ts`（围栏正则 + `JSON.parse` + `TOOL_NAMES.has()` 运行时 guard + 畸形 catch 不抛，对齐 SPEC §3.1 边界）→ PASS（4 tests）。
+- **全量测试**：3 suites / 6 tests 全绿，无回归。
+- **commit hashes**：
+  - 任务 1 `8720329` — `chore: scaffold node+ts+jest project with smoke test`
+  - 任务 2 `298d472` — `feat(types): add core domain types`
+  - 任务 3 `2e5a50f` — `feat(protocol): action fence parser`
+- **人工干预**：
+  - 轮 1 结束后 agent 主动提出"PLAN 勾选 + AGENT_LOG 记录"未并入脚手架 commit（保持外科手术式单一关注点），征询用户；用户轮 2 明确要求合并到本轮 docs commit。故任务 1 的 PLAN 勾选在本 docs commit 一并补上。
+  - 用户要求启用 `/karpathy-guidelines` + `/ponytail` 两个系统级技能（高性能/类型安全/CommonJS 友好），agent 额外加载 `test-driven-development` 以落实"严格 TDD"硬约束。
+- **教训**：
+  - **原生 worktree 工具会改写分支名**：`EnterWorktree` 对含 `/` 的名字做 sanitize（`/`→`+` + 前缀）。当用户要求精确分支名且该名是合法 git ref 时，`git branch -m` 重命名是低风险修正，不破坏 worktree 关联——但应在日志记录，避免后续 PR 误用工具原名。
+  - **脚手架 TDD 的"先看红"张力**：要跑测试须先有工具链（jest/ts-jest），而工具链配置属 TDD 例外（非生产行为）。解法：测试文件先写、配置+装依赖次之、再跑出 RED（feature 缺失的 TS2307），最后写最小实现到 GREEN——`greet` 这行生产代码确在测试失败后才写，TDD 铁律不破。
+  - **TS2307 即有效 RED**：greenfield 新模块的"模块未找到"编译错是合法的 TDD 失败（feature 缺失），不必硬凑成断言失败；只要失败原因是"待实现功能不存在"而非笔误即可。
+  - **PLAN 勾选的锚点策略**：PLAN 多个任务的"步骤 N"标题文案相同，`- [ ] **步骤 1：写失败测试**` 跨任务重复，不能 replace_all（会误勾未完成任务）。用"步骤标题 + 紧随的唯一行（测试文件名/实现文件名/git add 行）"作 old_string 锚点，逐处精确翻转。
+- **下一步**：feat/01-infra 分支内剩余任务（任务 4 ScriptedMock 起的 LLM/工具/护栏/反馈/记忆/凭据/审批/主循环/web/分发）待用户下达；或按 PLAN 依赖图在隔离 worktree 并行（任务 3‖4‖9）。
