@@ -706,7 +706,7 @@ git commit -m "feat(tools): run_shell + run_tests capture"
 - 消费：`src/types` 的 `Action`、`GuardrailVerdict`。
 - 产出：`Guardrail.assess(action): GuardrailVerdict`。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/guardrail.test.ts`:
 ```ts
@@ -737,12 +737,12 @@ test('write_file action is none (not assessed)', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/guardrail.test.ts`
 预期：FAIL——模块未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/guardrail/dangerPatterns.json`:
 ```json
@@ -832,12 +832,12 @@ export const Guardrail = {
 };
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/guardrail.test.ts`
 预期：PASS（7 个测试）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `e6d755f`
 
 ```bash
 git add src/guardrail/dangerPatterns.json src/guardrail/guardrail.ts test/guardrail.test.ts
@@ -855,7 +855,7 @@ git commit -m "feat(guardrail): shell-quote tokenize + danger pattern library"
 - 消费：`src/types` 的 `Observation`、`Feedback`。
 - 产出：`Parser` 接口、`FeedbackClassifier`（用 `Parser` 构造）、`JestParser`。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `demo/fixtures/jest-assertion-fail.txt`（逼真的 Jest 失败 stderr）:
 ```
@@ -914,12 +914,12 @@ test('unrecognized output falls back to other with truncated evidence', async ()
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/feedbackClassifier.test.ts`
 预期：FAIL——模块/fixture 未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/feedback/feedbackClassifier.ts`:
 ```ts
@@ -990,14 +990,14 @@ export const JestParser: Parser = {
 };
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/feedbackClassifier.test.ts`
 预期：PASS（3 个测试）。
 
 > **timeout 降级路径（GAP-2）**：`run_tests` 超时 → tool 返回 `{exitCode:-1, error:'timeout', stderr:''}`；`FeedbackClassifier.parse` 调 `JestParser.parse` 找不到 SyntaxError/失败块/expect 行 → 返回 `errorType:'other'`。即 timeout→'other' 的降级发生在 `FeedbackClassifier`，与 SPEC §3.3 一致。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `2dd83f1`
 
 ```bash
 git add src/feedback/feedbackClassifier.ts src/feedback/jestParser.ts demo/fixtures/*.txt test/feedbackClassifier.test.ts
