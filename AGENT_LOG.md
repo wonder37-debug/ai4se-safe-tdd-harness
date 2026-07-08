@@ -218,3 +218,31 @@
   - **路径锚定即工具沙箱边界**：`path.resolve(ctx.cwd, p)` 把所有 file tool 的路径钉死在 workspace 内，是后续 AgentLoop 命令护栏（U1 决定不加路径围栏）之外的"软围栏"——工具自身不越界，即便 agent 传 `../../../etc/passwd` 也只是读到主目录外文件而非写入，write_file 的 `mkdir recursive` 仅作用于最终 resolve 路径的父目录。
   - **exec 超时判定的脆弱性**：`e.signal === 'SIGTERM'` 在 Windows 上 exec 超时是否同样给 SIGTERM 待验证（Windows 无原生信号，node 用 TerminateProcess 模拟）。当前测试未覆盖超时路径（YAGNI，任务 6 只验捕获），阶段 7 GAP-2 注明的"timeout→other 降级"将在任务 8/12 的反馈闭环里被间接覆盖；若后续演示需要稳定超时断言，再补 Windows 适配。
 - **下一步**：推送 `feat/03-tools` 到 GitLab 远端，提示用户网页端建 MR；剩余任务（7 Guardrail 起的护栏/反馈/记忆/凭据/审批/主循环/web/分发）待用户下达。
+
+---
+
+## 2026-07-08 · 阶段 11：executing-plans — feat/04-guardrail-feedback 任务 7/8（TDD，两深维度）
+
+- **触发的技能**：`using-git-worktrees` → `karpathy-guidelines` + `ponytail` + `test-driven-development`（沿用阶段 8/9/10 系统级特化组合）。
+- **task 编号**：PLAN 任务 7（Guardrail——shell-quote tokenize + 危险模式库，深维度 1）/ 任务 8（FeedbackClassifier + JestParser，深维度 2）。
+- **关键 context 配置**：新 worktree `feat/04-guardrail-feedback`（路径 `.claude/worktrees/feat+04-guardrail-feedback`），从 MR 合并后的最新 `origin/main`（`0075b01` Merge feat/03-tools）切出——本阶段交付 SPEC 的两个重点深维度机制。
+- **前置清理（主目录运行，吸取阶段 10 闭环骨架）**：`git checkout main` + `git pull origin main`（fast-forward `3945597..0075b01`，同步网页合并的 feat/03-tools）→ `git worktree add -b feat/04-guardrail-feedback .claude/worktrees/feat+04-guardrail-feedback main` → `EnterWorktree(path)` 切入。
+  - **清理阻力与处置**：`git worktree remove .claude/worktrees/feat+03-tools` 首次失败——Windows 拒绝删除"当前会话 cwd 所在目录"（Permission denied）。但该失败已把 worktree 的管理元数据删去（仅物理目录残留），故 `git worktree list` 不再列 feat+03-tools；残留目录在 `EnterWorktree(path)` 把会话 cwd 迁到新 worktree 后，用 `rm -rf` 物理清掉 + `git worktree prune` 收尾。`git branch -d feat/03-tools` 因已合并而安全删除。全程未触碰 feat/01-infra 旧 worktree（surgical）。
+- **TDD 执行（任务 7 红→绿→重构）**：
+  - RED：`test/guardrail.test.ts`（7 用例：`rm -rf /` high / `r""m -rf /` 混淆仍 high / `curl|sh` high / `DROP TABLE` high / `ls` none / `rm a.txt` low / write_file 不评估 none）→ `TS2307 Cannot find module '../src/guardrail/guardrail'`（合法 RED）。
+  - GREEN：`src/guardrail/dangerPatterns.json`（8 条声明式模式：recursive-delete/privilege-escalation/remote-script-exec/db-destroy/system-write/fork-bomb/cred-exfil 高危 + plain-rm 低危）+ `src/guardrail/guardrail.ts`（`shell-quote.parse` tokenize → token 层 `has()/s.includes()` 匹配 → severity 分级；tokenize 失败一律判 high 强制审批，对齐 SPEC §3.4 + R1）→ PASS（7 tests）。`r""m -rf /` 经 shell-quote 在 token 层还原为 `rm`，揭穿引号混淆——深维度工程深度的核心断言成立。
+  - 重构：实现已最小（ponytail：无单实现接口、无未请求配置、模式库声明式 JSON 可扩），无需重构。
+- **TDD 执行（任务 8 红→绿→重构）**：
+  - RED：`test/feedbackClassifier.test.ts`（3 用例：assertion 失败→errorType=assertion+file:line / syntax 失败→syntax / 不可识别→other+截断 evidence）+ 两份 `demo/fixtures/*.txt` → `TS2307 '../src/feedback/feedbackClassifier'` 与 `'../src/feedback/jestParser'`（合法 RED）。
+  - **首次 GREEN 失败→修正实现（关键）**：按 PLAN 原文 `export const JestParser: Parser = {...}` 写实现后，`new JestParser()` 报 `TS2351 This expression is not constructable`——**PLAN 自身不一致**：任务 8 测试用 `new JestParser()`（构造），而实现导出的是 const 对象（不可构造）；且任务 12/17 的测试也都用 `new JestParser()`。判定测试符合跨任务既定用法（构造式），PLAN 的 impl 是笔误，故把 `JestParser` 改为 `class implements Parser`（最小修正，不破测试）→ `feedbackClassifier.ts`（Parser 接口 + truncate 2000 + exitCode==0 早返 + catch 降级 other 截断末 30 行，对齐 SPEC §3.6 边界 + GAP-2 timeout→other 降级路径）+ `jestParser.ts`（`●` 失败块正则 + `at file:line:col` 栈行正则 + SyntaxError/assertion/other 三分支 + 针对性 hint）→ PASS（3 tests）。
+  - 重构：无需。
+- **全量测试**：8 suites / 24 tests 全绿，无回归。
+- **commit hashes**：
+  - `e6d755f` — `feat(guardrail): shell-quote tokenize + danger pattern library`（任务 7，深维度 1）
+  - `2dd83f1` — `feat(feedback): FeedbackClassifier + JestParser`（任务 8，深维度 2）
+- **人工干预**：用户要求"主目录前置清理同步 → 新 worktree → 严格 TDD 任务 7/8 串行各独立 commit → docs 独立 commit → 推送不本地合并 main、提示网页建 MR"——逐条执行，无额外干预。
+- **教训**：
+  - **PLAN 也会自带 bug，TDD 的 RED→GREEN 闭环自带纠错**：任务 8 的 const-vs-class 不一致不是靠审读 PLAN 发现的，而是跑测试时 `TS2351` 当场暴露。这印证"先看红再写绿"的价值——实现与测试的真握手会逼出文档里读不出的矛盾。处置原则：当 PLAN 的 test 与 impl 冲突且 test 符合更广的跨任务用法时，修 impl 而非削测试（不削弱断言是 §A.4-C 硬标准）。
+  - **Windows worktree 自删阻力**：会话 cwd 锁住的 worktree 无法 `git worktree remove`（Permission denied），但元数据已删、仅剩物理残留；解法是先 `EnterWorktree(path)` 迁会话到新 worktree 解锁，再 `rm -rf` + `prune`。比阶段 10 的"ExitWorktree(keep) 回主 checkout 再 remove"多一条路径——当 ExitWorktree 对非本会话创建的 worktree 是 no-op 时，`EnterWorktree(path)` 迁 cwd 是可行的替代。
+  - **token 层匹配是护栏深度的根**：`r""m`→`rm` 的还原完全靠 `shell-quote.parse`，若改回字符串层 `includes('rm')` 会被 `r""m` 绕过——SPEC §4.2 "拦截绕过"行的对策（token 层匹配）在此被测试坐实，不是文档空话。
+- **下一步**：推送 `feat/04-guardrail-feedback` 到 GitLab 远端，提示用户网页端建 MR；剩余任务（9 MemoryStore 起的记忆/凭据/审批/主循环/web/分发/演示）待用户下达。两深维度机制已就位，后续任务 12 AgentLoop 将把它们接成闭环、任务 17 演示将复现三幕。

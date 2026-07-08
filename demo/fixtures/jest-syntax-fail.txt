@@ -1,0 +1,6 @@
+FAIL  ./add.test.js
+  ● Test suite failed to parse
+
+    SyntaxError: Unexpected token (5:2)
+
+      at add.test.js:5:2
