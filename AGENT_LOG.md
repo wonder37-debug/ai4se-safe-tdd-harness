@@ -273,3 +273,43 @@
   - **`status()` 不回显明文是可断言的**：`expect(store.status()).not.toHaveProperty('key')` 把"绝不回显"从文档口号变成测试不变量。这正是 §A.4-B/C"机制必须是代码、可 mock 单测"的体现——把"don't leak the key"这句本该写在 system prompt 的话，落成了 `status()` 返回型的运行时约束。
   - **记忆维度"不深入"是刻意的**：MemoryStore 全文约 30 行、文件式 KV、无向量库——SPEC §3.8 / §11.2 明确记忆仅"可运行最低实现"，向量检索被显式裁出 2 周范围。ponytail 阶梯第 1 rung（Does this need to exist?）在这里答"是但最小"：它必须存在以凑齐六维度 + 供 AgentLoop 拼 system prompt，但任何超出"拼字符串进 prompt"的复杂度都是 YAGNI。
 - **下一步**：推送 `feat/05-memory-creds` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务（11 MockApprovalGateway 起的审批/主循环/LLM 真实供应商/web/分发/演示）待用户下达。记忆与凭据两维度已就位，后续任务 12 AgentLoop 将持有 `MemoryStore` 拼 system prompt、`CredentialStore` 解 key 喂 LLMProvider。
+
+---
+
+## 2026-07-08 · 阶段 13：executing-plans — feat/06-core-loop 任务 11/12/13/14（TDD，内核中枢 AgentLoop + 审批/LLM 真实供应商）
+
+- **触发的技能**：`using-git-worktrees` → `karpathy-guidelines` + `ponytail` + `test-driven-development`（沿用阶段 8–12 系统级特化组合）。
+- **task 编号**：PLAN 任务 11（MockApprovalGateway）/ 任务 12（AgentLoop——手写状态机，集大成中枢）/ 任务 13（OpenAICompatProvider——真实 LLM、网络隔离）/ 任务 14（HttpApprovalGateway——浏览器内 HITL）。
+- **关键 context 配置**：新 worktree `feat/06-core-loop`（路径 `.claude/worktrees/feat-06-core-loop`），从 MR 合并后的最新 `origin/main`（`9afd0ee` Merge feat/05-memory-creds）切出——本阶段交付整个 Harness 内核的集大成中枢（AgentLoop 把前序八大接口接成闭环）+ 真实 LLM 供应商 + 浏览器内 HITL 通道。
+- **前置清理（主目录运行）**：`ExitWorktree(action:remove, discard_changes:true)` 清掉 feat+05 旧 worktree（3 个 commit 已在 main，丢弃无损失；ExitWorktree 仅删 worktree 不删分支）→ `git branch -d feat/05-memory-creds`（已合并安全删）→ `git fetch origin && git checkout main && git pull origin main`（fast-forward `a1ffa32..9afd0ee`）→ `EnterWorktree(name:"feat-06-core-loop")`。
+  - **清理阻力与处置**：`EnterWorktree(name)` 拒绝含 `+` 的名字（`InputValidationError: each "/"-separated segment must contain only letters, digits, dots, underscores, dashes`）——上一阶段 feat+05 的 `+` 名是更早工具版本所允许。改用 `feat-06-core-loop`，工具自动建分支 `worktree-feat-06-core-loop`，再 `git branch -m feat/06-core-loop` 重命名为规约分支名（surgical，不破坏 worktree 绑定，沿用阶段 12 经验）。基线 `npx jest`：10 suites / 29 tests 全绿，起点干净。
+- **TDD 执行（任务 11 红→绿→重构）**：
+  - RED：`test/approvalGateway.test.ts`（1 用例：队列裁决按序返回 deny→approve）→ `TS2307 Cannot find module '../src/approval/approvalGateway'`（合法 RED）。
+  - GREEN：`src/approval/approvalGateway.ts`（`ApprovalGateway` 接口 `request(action, reasons): Promise<ApprovalDecision>` + `MockApprovalGateway` 持 `ApprovalDecision[]` 队列、`shift()` 按序返回、队列空默认 deny，对齐 SPEC §3.5 测试实现）→ PASS（1 test）。
+  - 重构：无需。
+- **TDD 执行（任务 12 红→绿→重构）——集大成中枢**：
+  - RED：`test/agentLoop.test.ts`（3 个集成用例：① 全绿闭环 write buggy→test fail→feedback 回灌→fix→green→finish，断言 `haltReason==='finish'` 且 `iterations===5` 且 `add(2,3)===5`；② 护栏 `rm -rf /` high→MockApproval deny→作为 observation 回灌→下一轮 finish；③ 同一 assertion 点连续失败两次→`HALTED(stuck)`）→ `TS2307 Cannot find module '../src/loop/agentLoop'`（合法 RED）。
+  - GREEN：`src/loop/eventSink.ts`（`EventSink` 接口 + `noopSink` + `EventStore`：`emit` 自增 id、上限 1000 条丢最旧，对齐 SPEC §4.1 + §3.10 轮询源）+ `src/loop/agentLoop.ts`（`while (iter < maxIter)` 状态机：`llm.complete` → `ActionProtocol.parse` → 无动作回灌提示 → `finish` 即停 → `Guardrail.assess`（high 走 `approval.request`、deny 回灌 continue / low 告警 / none 直行）→ `registry.dispatch` → `run_tests` 且 `exitCode!==0` 时 `feedback.parse` 回灌 + stuck 判定（`fb.assertion? file:line : errorType` 作 key，连续两次相同即 `HALTED(stuck)`）→ cap 兜底）→ **首次 GREEN 即 PASS（3 tests）**，对齐 SPEC §3.7 + §5.2 数据流。
+  - **LoopState 可追溯（GAP-3）**：`types.ts` 的 `LoopState='RUNNING'|'APPROVAL_PENDING'|'EXECUTING'|'HALTED'` 在 `AgentLoop` 内部以控制流位置编码（`while` 体=RUNNING、`await approval.request`=APPROVAL_PENDING、`dispatch`=EXECUTING、`return`=HALTED），不维护运行时 state 变量——四态被三个集成测试在不同路径上锁死，无需显式 state 字段。
+  - 重构：无需。`effective: Action = action` 一行是 high-deny 分支的占位（当前 approve 后即用原 action，未做改写），保留以为后续"审批后降级命令"留扩展点（YAGNI：暂不实现改写）。
+- **TDD 执行（任务 13 红→绿→重构）**：
+  - RED：`test/openaiCompat.test.ts`（2 用例：注入 fakeFetch 返回 choices→`text==='LLM-SAYS'` 且 `Authorization==='Bearer k'`；4xx→`rejects.toThrow(/auth|401/i)`）→ `TS2307 Cannot find module '../src/llm/openaiCompat'`（合法 RED）。
+  - GREEN：`src/llm/openaiCompat.ts`（`OpenAICompatProvider implements LLMProvider`：构造注入 `fetch`（`opts.fetch ?? fetch`）；`POST {baseUrl}/v1/chat/completions` + `Bearer` 头 + `temperature:0`；`!res.ok` 时 4xx→`AuthError`（5xx→普通 Error），对齐 SPEC §3.2 "不使用 agent SDK、裸 `/v1/chat/completions`" + 4xx→HALTED 边界）→ PASS（2 tests，无网络——fetch 全程注入）。
+  - 重构：无需。
+- **TDD 执行（任务 14 红→绿→重构）——首次 GREEN 失败→修正**：
+  - RED：`test/httpApprovalGateway.test.ts`（2 用例：`request` 挂起→`pending()` 返 1 条→`resolve(id, approve)` 后 Promise 决议 approve；deny 同理）→ `TS2307`（合法 RED）。
+  - **首次 GREEN 失败→修正实现（关键）**：按 PLAN 原文 `private pending = new Map<...>()` + 方法 `pending()` 同名写实现后，`g.pending()` 报 `TS2554 Type 'Map<string, Pending>' has no call signatures`——**PLAN 自身 bug**：类内字段 `pending`（Map）与同名方法 `pending()` 冲突，TS 让字段遮蔽方法，`g.pending` 解析为 Map 而非方法。判定测试是规约（`g.pending()` 是 web 路由与前端契约），故修 impl：字段重命名为 `pendingMap`（`// ponytail:` 注释标明），方法名 `pending()`/`pendingList()`/`resolve()` 不动→ PASS（2 tests）。
+  - 重构：`pending()` 与 `pendingList()` 当前是别名（PLAN 即如此，`pending()` 委托 `pendingList()`）——保留两者因 web 路由用 `pending()`、前端契约亦然，`pendingList()` 为显式语义留名；非冗余。
+- **全量测试**：14 suites / 37 tests 全绿，无回归（新增 8 tests：1+3+2+2）。
+- **commit hashes**：
+  - `240f296` — `feat(approval): ApprovalGateway interface + MockApprovalGateway`（任务 11）
+  - `f5e6068` — `feat(loop): hand-written AgentLoop state machine with integration tests`（任务 12，集大成中枢）
+  - `ad72a74` — `feat(llm): OpenAICompatProvider with injectable fetch`（任务 13）
+  - `cf9c4e8` — `feat(approval): HttpApprovalGateway with pending resolvers`（任务 14）
+- **人工干预**：用户要求"主目录前置清理同步 → 新 worktree → 严格 TDD 任务 11/12/13/14 串行各独立 commit → docs 独立 commit → 推送不本地合并 main、提示网页建 MR"——逐条执行，无额外干预。`EnterWorktree` 名字禁用 `+`、默认分支名前缀 `worktree-`，两处偏差均以 `git branch -m` 最小修正。
+- **教训**：
+  - **状态机不必有 state 字段，控制流位置即是状态**：AgentLoop 全程无 `let state: LoopState` 变量，四态由 `while`/`await approval`/`dispatch`/`return` 的代码位置编码。这反而让状态转换更可测——三个集成测试分别命中 finish 路径、deny 回灌路径、stuck 路径，每条路径的 `haltReason` 都是确定的。若引入显式 state 字段，反而要额外测"state 是否正确赋值"这种实现细节。SPEC §3.7 "以控制流位置编码状态"不是偷懒，是可测性更优的选型。
+  - **stuck 判定是 TDD 反馈闭环的"安全阀"**：连续两轮同一 `assertion.file:line` 失败即 `HALTED(stuck)`——这防止 agent 在死循环里空转烧 token。判定 key 用 `file:line`（断言点）而非整个 stderr，因为 agent 改实现后 stderr 文本会变但断言位置可能不变=没真正修对。这条机制把 SPEC §3.7 停机条件落成可复现的测试③。
+  - **PLAN 又一次自带 bug（field/method 同名），RED→GREEN 当场暴露**：任务 14 的 `pending` Map 字段与 `pending()` 方法同名，TS 让字段遮蔽方法。这是阶段 11（任务 8 const-vs-class）后 PLAN 第二处 impl bug。处置原则不变：测试是跨任务契约（web 路由/前端都用 `pending()`），修 impl 不削测试。印证"先看红再写绿"的价值——文档审读看不出命名遮蔽，编译器/测试当场报错才暴露。
+  - **fetch 注入是"无网单测"的最小依赖倒置**：OpenAICompatProvider 不 mock 全局 `fetch`，而是构造期注入 `opts.fetch ?? fetch`——生产用全局 fetch、测试用 fakeFetch。这让"4xx→AuthError"成为可断言不变量（`rejects.toThrow(/auth|401/i)`）而非依赖真实网络的猜测。SPEC §4.4 "替换为 Mock 后可确定性单测、无网络"在此被坐实。
+- **下一步**：推送 `feat/06-core-loop` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务（15 WebServer 起的 http 轮询路由/静态前端/机制演示/Docker+CI）待用户下达。内核中枢 AgentLoop 已就位，后续任务 15 WebServer 将把 `HttpApprovalGateway` + `EventStore` + `AgentLoop` 接成浏览器可观测/可审批的面板，任务 17 演示将复现 §A.6 三幕（护栏+HITL / 反馈自修正 / 混淆绕过+stuck）。
