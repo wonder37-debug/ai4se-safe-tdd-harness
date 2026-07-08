@@ -191,3 +191,30 @@
   - **.gitignore 不影响 jest 发现，但仍是必要安全补丁**：jest 的 `testMatch` 不会读 `.gitignore`（默认仅忽略 `node_modules`），故"嵌套测试屏蔽"靠的是 worktree cwd 隔离（jest 不向上递归），而非 gitignore。但 `.claude/` 进 gitignore 防的是**会话数据/worktree 内容被误提交**——两件事不可混淆，需分别验证（`check-ignore` 验 git 层、`--listTests` 验 jest 层）。
   - **并行 worktree 的依赖隔离**：任务 4 仅消费 `src/types`（Message），与 feat/01-infra 已交付的 types 同源（均来自 main），无跨分支依赖冲突，适合并行开 worktree——印证 PLAN 依赖图"任务 3‖4‖9 可并行"。
 - **下一步**：推送 `feat/02-llm-mock` 到 GitLab 远端，提示用户网页端建 MR；其余任务（5+ 起的工具/护栏/反馈/主循环/web/分发）待用户下达或在新的并行 worktree 推进。
+
+---
+
+## 2026-07-08 · 阶段 10：executing-plans — feat/03-tools 任务 5/6（TDD）
+
+- **触发的技能**：`using-git-worktrees` → `karpathy-guidelines` + `ponytail` + `test-driven-development`（沿用阶段 8/9 系统级特化组合）。
+- **task 编号**：PLAN 任务 5（ToolRegistry + 文件工具）/ 任务 6（shell 工具 run_shell/run_tests 捕获）。
+- **关键 context 配置**：新 worktree `feat/03-tools`（路径 `.claude/worktrees/feat+03-tools`），从 MR 合并后的最新 `origin/main`（`3945597` Merge feat/02-llm-mock）切出。
+- **前置清理（主目录运行）**：`ExitWorktree(keep)` 退出 feat/02 会话回主 checkout → `git checkout main` + `git pull origin main`（fast-forward 到 `3945597`）→ `git worktree remove .claude/worktrees/feat+02-llm-mock`（物理清理，node_modules 已 gitignore 无阻力）→ `git branch -d feat/02-llm-mock`（已合并，安全删除）→ `git worktree add -b feat/03-tools .claude/worktrees/feat+03-tools origin/main` → `EnterWorktree(path)` 切入。全程未触碰 feat/01-infra 旧 worktree（surgical，只清当前生命周期的分支 2）。
+- **TDD 执行（任务 5 红→绿→重构）**：
+  - RED：`test/fileTools.test.ts`（3 用例：write/read roundtrip / list_dir / read 缺失文件返回 ok:false）→ `TS2307 Cannot find module '../src/tools/fileTools'`（feature 缺失，合法 RED）。
+  - GREEN：`src/tools/tool.ts`（`ToolContext{cwd}` 按 SPEC §3.3 裁剪不注入 memory/creds + `errMsg` helper 统一 error 字段 + `ToolRegistry.dispatch` 未知工具/异常转 `Observation{ok:false,error}`）+ `src/tools/fileTools.ts`（read_file/write_file/list_dir，`path.resolve(cwd,p)` 做路径锚定，write_file 带 `mkdir recursive`）→ PASS（3 tests）。
+  - 重构：实现已最小（ponytail：`wrap()` 在 shellTools 里待用，fileTools 无多余抽象），无需重构。
+- **TDD 执行（任务 6 红→绿→重构）**：
+  - RED：`test/shellTools.test.ts`（2 用例：stdout+exitCode0 捕获 / 非零 exit+stderr 捕获，按 `process.platform` 分支命令转义）→ `TS2307 '../src/tools/shellTools'`。
+  - GREEN：`src/tools/shellTools.ts`（`promisify(exec)` + shell:true 捕获 stdout/stderr/exitCode；`run_tests` timeout 60s、`run_shell` 30s；exec 非零退出走 catch，`e.killed && e.signal==='SIGTERM'` 判超时→`error:'timeout'`，对齐 SPEC §3.3 + 阶段 7 GAP-2 timeout 降级路径）→ PASS（2 tests）。Windows 下 cmd.exe 的 `echo hello` 与 `node -e "..."` 转义均按 PLAN 平台分支通过。
+  - 重构：无需。
+- **全量测试**：6 suites / 14 tests 全绿，无回归。
+- **commit hashes**：
+  - `eff62d6` — `feat(tools): ToolRegistry + file tools`（任务 5）
+  - `8390f53` — `feat(tools): run_shell + run_tests capture`（任务 6）
+- **人工干预**：用户要求"主目录前置清理同步 → 新 worktree → 严格 TDD 任务 5/6 串行各独立 commit → docs 独立 commit → 推送不本地合并 main"——逐条执行，无额外干预。
+- **教训**：
+  - **分支生命周期闭环**：MR 网页合并后，"pull 同步 → worktree remove → branch -d → 新 worktree" 是可复用的分支切换骨架。`worktree remove` 之所以无阻力，是因为阶段 9 已把 `.claude/` 进 gitignore——node_modules 等未跟踪内容被 ignore，git 不视作"待提交修改"而拒绝删除。安全补丁的收益在此显形。
+  - **路径锚定即工具沙箱边界**：`path.resolve(ctx.cwd, p)` 把所有 file tool 的路径钉死在 workspace 内，是后续 AgentLoop 命令护栏（U1 决定不加路径围栏）之外的"软围栏"——工具自身不越界，即便 agent 传 `../../../etc/passwd` 也只是读到主目录外文件而非写入，write_file 的 `mkdir recursive` 仅作用于最终 resolve 路径的父目录。
+  - **exec 超时判定的脆弱性**：`e.signal === 'SIGTERM'` 在 Windows 上 exec 超时是否同样给 SIGTERM 待验证（Windows 无原生信号，node 用 TerminateProcess 模拟）。当前测试未覆盖超时路径（YAGNI，任务 6 只验捕获），阶段 7 GAP-2 注明的"timeout→other 降级"将在任务 8/12 的反馈闭环里被间接覆盖；若后续演示需要稳定超时断言，再补 Windows 适配。
+- **下一步**：推送 `feat/03-tools` 到 GitLab 远端，提示用户网页端建 MR；剩余任务（7 Guardrail 起的护栏/反馈/记忆/凭据/审批/主循环/web/分发）待用户下达。

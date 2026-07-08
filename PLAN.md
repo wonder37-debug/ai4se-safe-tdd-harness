@@ -445,7 +445,7 @@ git commit -m "feat(llm): LLMProvider interface + ScriptedMock"
 - 消费：`src/types` 的 `Action`、`Observation`。
 - 产出：`Tool` 接口、`ToolRegistry`、`ToolContext`，文件工具 `read_file`/`write_file`/`list_dir`。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/fileTools.test.ts`:
 ```ts
@@ -486,12 +486,12 @@ test('read_file on missing file returns ok:false with error', async () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/fileTools.test.ts`
 预期：FAIL——模块未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/tools/tool.ts`（`ToolContext` 仅 `cwd`：按 SPEC §3.3 裁剪，`MemoryStore`/`CredentialStore` 由 `AgentLoop` 持有，不注入；`error` 字段统一填 `e instanceof Error ? e.message : String(e)`，避免非 Error 对象产出 `[object Object]`）:
 ```ts
@@ -569,12 +569,12 @@ export const list_dir: Tool = {
 export const fileTools: Tool[] = [read_file, write_file, list_dir];
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/fileTools.test.ts`
 预期：PASS（3 个测试）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `eff62d6`
 
 ```bash
 git add src/tools/tool.ts src/tools/fileTools.ts test/fileTools.test.ts
@@ -592,7 +592,7 @@ git commit -m "feat(tools): ToolRegistry + file tools"
 - 消费：`src/tools/tool` 的 `Tool`、`ToolContext`。
 - 产出：`run_shell`、`run_tests`（仅捕获 stdout/stderr/exitCode——反馈解析归任务 11 的主循环）。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/shellTools.test.ts`:
 ```ts
@@ -623,12 +623,12 @@ test('run_shell captures non-zero exit and stderr', async () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/shellTools.test.ts`
 预期：FAIL——模块未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/tools/shellTools.ts`:
 ```ts
@@ -683,12 +683,12 @@ export const run_tests: Tool = {
 export const shellTools: Tool[] = [run_shell, run_tests];
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/shellTools.test.ts`
 预期：PASS（2 个测试）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `8390f53`
 
 ```bash
 git add src/tools/shellTools.ts test/shellTools.test.ts
