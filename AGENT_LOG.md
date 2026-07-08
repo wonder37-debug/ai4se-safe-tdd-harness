@@ -168,3 +168,26 @@
   - **TS2307 即有效 RED**：greenfield 新模块的"模块未找到"编译错是合法的 TDD 失败（feature 缺失），不必硬凑成断言失败；只要失败原因是"待实现功能不存在"而非笔误即可。
   - **PLAN 勾选的锚点策略**：PLAN 多个任务的"步骤 N"标题文案相同，`- [ ] **步骤 1：写失败测试**` 跨任务重复，不能 replace_all（会误勾未完成任务）。用"步骤标题 + 紧随的唯一行（测试文件名/实现文件名/git add 行）"作 old_string 锚点，逐处精确翻转。
 - **下一步**：feat/01-infra 分支内剩余任务（任务 4 ScriptedMock 起的 LLM/工具/护栏/反馈/记忆/凭据/审批/主循环/web/分发）待用户下达；或按 PLAN 依赖图在隔离 worktree 并行（任务 3‖4‖9）。
+
+---
+
+## 2026-07-08 · 阶段 9：executing-plans — feat/02-llm-mock 任务 4（TDD）+ .claude 安全补丁
+
+- **触发的技能**：`using-git-worktrees` → `karpathy-guidelines` + `ponytail` + `test-driven-development`（沿用阶段 8 的系统级特化组合）。
+- **task 编号**：PLAN 任务 4（ScriptedMock LLMProvider）+ 仓库安全补丁（.gitignore 加 `.claude/`）。
+- **关键 context 配置**：新 worktree `feat/02-llm-mock`（路径 `.claude/worktrees/feat+02-llm-mock`），从最新 `origin/main`（`4c8743b`，含阶段 8 全部成果 + ci 提交）切出；与 feat/01-infra 并行，互不触碰。
+- **worktree 创建细节（吸取阶段 8 教训）**：跳过原生 `EnterWorktree` 的 `name` 模式（它会 sanitize `feat/02-llm-mock` → `worktree-feat+02-llm-mock`，再需 `git branch -m` 修正），改用技能 Step 1b 的 `git worktree add` 直接以精确分支名 `feat/02-llm-mock` 从 `origin/main` 建 worktree，再用原生 `EnterWorktree(path)` 切入会话——分支名一次到位，无重命名步骤。目录名仍按仓库约定用 `feat+02-llm-mock`（`/`→`+`，避免路径里多一层目录）。
+- **安全补丁（先于功能开发）**：`.gitignore` 末尾追加 `.claude/`（含中文注释）。本地三重验证：① `git check-ignore .claude/` 返回命中；② `git status --short` 仅 `.gitignore` 一行变更，无 `.claude/` 会话数据泄漏；③ `npx jest --listTests` 仅列出本 worktree 的 3 个测试文件，兄弟 worktree `feat+01-infra/test/*` 未被 jest 发现（嵌套测试安全屏蔽）。独立 commit。
+- **TDD 执行（任务 4 红→绿→重构）**：
+  - RED：`test/scriptedMock.test.ts`（3 用例：队列顺序返回 / sticky 末条粘滞 / 非粘滞耗尽抛错）→ `npx jest` 报 `TS2307 Cannot find module '../src/llm/scriptedMock'`（feature 缺失，合法 RED）。
+  - GREEN：写 `src/llm/provider.ts`（`LLMProvider` 接口，`complete` 返回 `{text, stopReason}`，与 SPEC §3.2 + 阶段 6 类型一致性约束对齐）+ `src/llm/scriptedMock.ts`（队列 shift + sticky 兜底 + 耗尽 throw）→ PASS（3 tests）。
+  - 重构：实现已最小（ponytail：无单实现接口之外的抽象、无未请求配置），无需重构。全量 4 suites / 9 tests 绿，无回归。
+- **commit hashes**：
+  - `ce5a5d1` — `chore: add .claude/ to .gitignore`（安全补丁，独立提交）
+  - `4b6dcaf` — `feat(llm): LLMProvider interface + ScriptedMock`（任务 4 实现）
+- **人工干预**：用户要求"分支 2 独立 worktree、先做 .claude 安全补丁、严格 TDD 任务 4、独立 docs commit、推送远端不本地合并 main、提示网页建 MR"——逐条执行。
+- **教训**：
+  - **worktree 分支名精确控制**：当用户要求精确分支名且原生工具会 sanitize 时，`git worktree add -b <精确名> <path> <base>` + `EnterWorktree(path)` 组合比"原生 name + 事后 branch -m"更干净——少一步修正、少一次潜在混淆。阶段 8 的教训在此转化为可复用模式。
+  - **.gitignore 不影响 jest 发现，但仍是必要安全补丁**：jest 的 `testMatch` 不会读 `.gitignore`（默认仅忽略 `node_modules`），故"嵌套测试屏蔽"靠的是 worktree cwd 隔离（jest 不向上递归），而非 gitignore。但 `.claude/` 进 gitignore 防的是**会话数据/worktree 内容被误提交**——两件事不可混淆，需分别验证（`check-ignore` 验 git 层、`--listTests` 验 jest 层）。
+  - **并行 worktree 的依赖隔离**：任务 4 仅消费 `src/types`（Message），与 feat/01-infra 已交付的 types 同源（均来自 main），无跨分支依赖冲突，适合并行开 worktree——印证 PLAN 依赖图"任务 3‖4‖9 可并行"。
+- **下一步**：推送 `feat/02-llm-mock` 到 GitLab 远端，提示用户网页端建 MR；其余任务（5+ 起的工具/护栏/反馈/主循环/web/分发）待用户下达或在新的并行 worktree 推进。
