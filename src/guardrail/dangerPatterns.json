@@ -1,0 +1,18 @@
+[
+  { "id": "recursive-delete", "severity": "high",
+    "reason": "recursive forced deletion" },
+  { "id": "privilege-escalation", "severity": "high",
+    "reason": "privilege escalation" },
+  { "id": "remote-script-exec", "severity": "high",
+    "reason": "piping remote content into a shell" },
+  { "id": "db-destroy", "severity": "high",
+    "reason": "database destruction" },
+  { "id": "system-write", "severity": "high",
+    "reason": "writing to system paths" },
+  { "id": "fork-bomb", "severity": "high",
+    "reason": "fork bomb pattern" },
+  { "id": "cred-exfil", "severity": "high",
+    "reason": "outbound request carrying auth/secret header" },
+  { "id": "plain-rm", "severity": "low",
+    "reason": "single-target rm (no -rf)" }
+]
