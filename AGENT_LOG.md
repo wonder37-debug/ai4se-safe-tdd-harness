@@ -246,3 +246,30 @@
   - **Windows worktree 自删阻力**：会话 cwd 锁住的 worktree 无法 `git worktree remove`（Permission denied），但元数据已删、仅剩物理残留；解法是先 `EnterWorktree(path)` 迁会话到新 worktree 解锁，再 `rm -rf` + `prune`。比阶段 10 的"ExitWorktree(keep) 回主 checkout 再 remove"多一条路径——当 ExitWorktree 对非本会话创建的 worktree 是 no-op 时，`EnterWorktree(path)` 迁 cwd 是可行的替代。
   - **token 层匹配是护栏深度的根**：`r""m`→`rm` 的还原完全靠 `shell-quote.parse`，若改回字符串层 `includes('rm')` 会被 `r""m` 绕过——SPEC §4.2 "拦截绕过"行的对策（token 层匹配）在此被测试坐实，不是文档空话。
 - **下一步**：推送 `feat/04-guardrail-feedback` 到 GitLab 远端，提示用户网页端建 MR；剩余任务（9 MemoryStore 起的记忆/凭据/审批/主循环/web/分发/演示）待用户下达。两深维度机制已就位，后续任务 12 AgentLoop 将把它们接成闭环、任务 17 演示将复现三幕。
+
+---
+
+## 2026-07-08 · 阶段 12：executing-plans — feat/05-memory-creds 任务 9/10（TDD，记忆 + 凭据两维度）
+
+- **触发的技能**：`using-git-worktrees` → `karpathy-guidelines` + `ponytail` + `test-driven-development`（沿用阶段 8–11 系统级特化组合）。
+- **task 编号**：PLAN 任务 9（MemoryStore——文件式 KV 记忆维度最小实现）/ 任务 10（CredentialStore——EncryptedFileStore，AES-256-GCM 凭据安全）。
+- **关键 context 配置**：新 worktree `feat/05-memory-creds`（路径 `.claude/worktrees/feat+05-memory-creds`），从 MR 合并后的最新 `origin/main`（`a1ffa32` Merge feat/04-guardrail-feedback）切出——本阶段交付记忆与凭据两维度的"可运行最低实现"（非深维度，但凭据涉及 SPEC §3.9 / §4.2 威胁模型硬约束）。
+- **前置清理**：`EnterWorktree(name)` 自动建 `worktree-feat+05-memory-creds` 分支（基于 `a1ffa32`）→ `git branch -m feat/05-memory-creds` 重命名为本阶段规约分支名。基线 `npx jest`：8 suites / 24 tests 全绿，无回归起点干净。
+- **TDD 执行（任务 9 红→绿→重构）**：
+  - RED：`test/memoryStore.test.ts`（2 用例：write→read roundtrip + clear 移除 / systemPrompt 拼入笔记）→ 模块未找到致 `n` 隐式 `any`（`TS7006`），合法 RED。
+  - GREEN：`src/memory/memoryStore.ts`（`./memory/*.md` 文件式 KV；`read()` 同步读目录所有 `.md`→`{key,note}`；`write` 异步 `mkdir recursive` + `writeFile`；`clear` `rmSync force`；`systemPrompt()` 空笔记返 `''` 否则拼 `'Project notes:\n' + '- [key] note'`，对齐 SPEC §3.8 + §5.2 启动时拼进 system prompt）→ PASS（2 tests）。
+  - 重构：实现已最小（ponytail：无单实现接口、无向量库、无未请求配置——记忆维度刻意不深入，仅满足六维度"可运行最低实现"），无需重构。
+- **TDD 执行（任务 10 红→绿→重构）**：
+  - RED：`test/credentialStore.test.ts`（3 用例：set→resolve 返回 key + status present 不回显明文 / 错误主密码 reject / clear 后 status not present）→ `TS2307 Cannot find module '../src/creds/credentialStore'`（合法 RED）。
+  - GREEN：`src/creds/credentialStore.ts`（`CredentialStore` 接口 + `EncryptedFileStore`：`pbkdf2Sync(master,'ai4se-salt',100000,32,'sha256')` 派生 256-bit key；`aes-256-gcm` + 随机 12 字节 IV + `getAuthTag`；落盘布局 `iv(12)|tag(16)|ct`；`resolve` 用主密码派生同 key 解密 + `setAuthTag` 校验（GCM 认证加密，错密码/篡改即抛）；`status()` 仅返 `{present,source}` 绝不回显 key；`clear()` `rmSync force`，对齐 SPEC §3.9 / §4.2 威胁模型 + §7.1）→ PASS（3 tests）。
+  - 重构：无需。`deriveKey` 的硬编码 salt 是已知简化（ponytail：随机 salt 应随 blob 一起存，但 2 周裁剪下主密码本身就是根密，PBKDF2 10 万次已抗爆破；若升级到多用户/共享环境，再改为 per-file 随机 salt 存于 blob 头部）。
+- **全量测试**：10 suites / 29 tests 全绿，无回归（新增 5 tests）。
+- **commit hashes**：
+  - `3fe863d` — `feat(memory): file-backed MemoryStore`（任务 9）
+  - `f9e8833` — `feat(creds): EncryptedFileStore AES-256-GCM`（任务 10）
+- **人工干预**：用户要求"新 worktree → 严格 TDD 任务 9/10 各独立 commit → docs 独立 commit → 推送不本地合并 main"——逐条执行，无额外干预。`EnterWorktree` 默认分支名与规约不符时，`git branch -m` 是最小修正（surgical，不破坏 worktree 绑定）。
+- **教训**：
+  - **GCM 的"认证"二字是凭据安全的根**：AES-256-GCM 不只是加密，`getAuthTag/setAuthTag` 提供完整性认证——错密码或 blob 被篡改时 `decipher.final()` 直接抛错，测试"错误主密码 reject"正是坐实这条性质。若用 CBC 而非 GCM，错密码可能产出"成功解密"的乱码而非抛错，`resolve` 就会回灌垃圾 key——SPEC §3.9 选 GCM 不是随意的，是可测的安全不变量。
+  - **`status()` 不回显明文是可断言的**：`expect(store.status()).not.toHaveProperty('key')` 把"绝不回显"从文档口号变成测试不变量。这正是 §A.4-B/C"机制必须是代码、可 mock 单测"的体现——把"don't leak the key"这句本该写在 system prompt 的话，落成了 `status()` 返回型的运行时约束。
+  - **记忆维度"不深入"是刻意的**：MemoryStore 全文约 30 行、文件式 KV、无向量库——SPEC §3.8 / §11.2 明确记忆仅"可运行最低实现"，向量检索被显式裁出 2 周范围。ponytail 阶梯第 1 rung（Does this need to exist?）在这里答"是但最小"：它必须存在以凑齐六维度 + 供 AgentLoop 拼 system prompt，但任何超出"拼字符串进 prompt"的复杂度都是 YAGNI。
+- **下一步**：推送 `feat/05-memory-creds` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务（11 MockApprovalGateway 起的审批/主循环/LLM 真实供应商/web/分发/演示）待用户下达。记忆与凭据两维度已就位，后续任务 12 AgentLoop 将持有 `MemoryStore` 拼 system prompt、`CredentialStore` 解 key 喂 LLMProvider。

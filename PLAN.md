@@ -1013,7 +1013,7 @@ git commit -m "feat(feedback): FeedbackClassifier + JestParser"
 
 **接口：** 产出 `MemoryStore`（`read(): {key,note}[]`、`write(key,note)`、`clear(key)`）。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/memoryStore.test.ts`:
 ```ts
@@ -1040,12 +1040,12 @@ test('system prompt includes notes', async () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/memoryStore.test.ts`
 预期：FAIL——模块未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/memory/memoryStore.ts`:
 ```ts
@@ -1084,12 +1084,12 @@ export class MemoryStore {
 }
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/memoryStore.test.ts`
 预期：PASS（2 个测试）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `3fe863d`
 
 ```bash
 git add src/memory/memoryStore.ts test/memoryStore.test.ts
@@ -1106,7 +1106,7 @@ git commit -m "feat(memory): file-backed MemoryStore"
 **接口：**
 - 产出：`CredentialStore` 接口、`EncryptedFileStore`（`set(key, masterPassword)`、`status()`、`clear()`、`resolve(masterPassword)`）。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/credentialStore.test.ts`:
 ```ts
@@ -1142,12 +1142,12 @@ test('clear removes the file; status not present', async () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/credentialStore.test.ts`
 预期：FAIL——模块未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/creds/credentialStore.ts`:
 ```ts
@@ -1204,12 +1204,12 @@ export class EncryptedFileStore implements CredentialStore {
 }
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/credentialStore.test.ts`
 预期：PASS（3 个测试）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `f9e8833`
 
 ```bash
 git add src/creds/credentialStore.ts test/credentialStore.test.ts
