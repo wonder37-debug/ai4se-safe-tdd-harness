@@ -1,0 +1,101 @@
+# AGENT_LOG.md
+
+> 按 §4.9 要求，时间顺序记录关键节点：时间戳 + task 编号、触发的 Superpowers 技能、关键 prompt/context 配置、subagent/agent 输出的关键片段或 commit hash、人工干预（改了什么、为什么）、教训。
+> 时间戳为本次会话内顺序时刻（2026-07-08），正式提交前由作者校准为真实时刻。
+
+---
+
+## 2026-07-08 · 阶段 0：仓库初始化与 CLAUDE.md
+
+- **触发的技能**：`/init`（非 Superpowers 七步流程内，但为后续流程奠基）。
+- **task 编号**：T0（前置）。
+- **关键 context 配置**：读取仓库根两份要求文档（`AI4SE 期末项目 · 通用要求.md`、`AI4SE_Final_Project_A_Coding_Agent_Harness.md`）、`.gitlab-ci.yml`（Auto-DevOps 模板 + SAST + secret-detection，**缺 `unit-test` job**）、`.env.example`、`.gitignore`。
+- **agent 输出**：生成 `CLAUDE.md`（commit 前置于本次提交），固化硬约束：harness 必须自研内核（禁 LangChain/AutoGen/CrewAI 高层 loop）、机制必须是代码非提示词、TDD 强制、Superpowers 七步流程、SPEC+PLAN 冷启动验证前不写实现、凭据三不（不硬编码/不提交/不入日志）。
+- **关键发现 / 安全告警**：`.env` 内含一个形似真实的 `sk-...` key（`CLAUDE_API_KEY`）。已确认被 `.gitignore` 排除、未进 git；agent 未在任何输出中打印或提交该 key。
+- **人工干预**：无（用户仅要求分析代码库生成 CLAUDE.md）。
+- **教训**：`/init` 阶段就应把"评分硬约束"与"未决缺口（CI 缺 unit-test job）"写进 CLAUDE.md，避免后续阶段遗忘；安全上 `.env` 明文 key 即使被 ignore 也应在日志中显式标注风险。
+
+---
+
+## 2026-07-08 · 阶段 1：brainstorming — 上下文探索
+
+- **触发的技能**：`brainstorming`。
+- **task 编号**：BT-1（Explore project context）。
+- **关键 context**：复用阶段 0 已读文档；确认仓库为 greenfield（无源码、无 SPEC/PLAN、未选语言）。
+- **agent 输出**：建立 brainstorming checklist（7 个 task），判定项目规模适中、无需拆子项目，可直接进入单 spec 流程。
+- **人工干预**：用户给定技术栈 Node.js、项目名 AI4SE-Safe-TDD-Harness，并点名 4 个重点追问方向（主循环 / Mock LLM / 护栏 / TDD 反馈）+ 凭据与分发。
+- **教训**：用户点名重点方向时，应把它们映射到 checklist 的"提问"环节逐个落实，而不是在设计中才补。
+
+---
+
+## 2026-07-08 · 阶段 2：brainstorming — 8 轮追问（AskUserQuestion）
+
+- **触发的技能**：`brainstorming`（提问环节）。
+- **task 编号**：BT-2。
+- **策略**：每问给 2-3 个带取舍的选项 + 推荐，多选一；每问聚焦一个真正的设计分叉。各问题的"选项"即"2-3 方案 + 取舍"，用户逐一裁决。
+- **8 轮裁决**：
+
+| # | 议题 | 选项 | 用户裁决 |
+|---|---|---|---|
+| 1 | LLM↔Harness 动作协议 | A 原生 function-calling / **B 自定义 JSON 围栏** / C ReAct | **B** |
+| 2 | 危险命令检测深度 | A 纯正则 / **B shell-quote tokenize+模式库** / C 分层+severity+HITL | **B** |
+| 3 | HITL 审批接口 | A CLI 阻塞 / **B ApprovalGateway 抽象+状态机** / C 文件队列 | **B** |
+| 4 | TDD 反馈闭环深度 | A 截断原文 / **B 结构化 FeedbackClassifier** / C B+失败模式记忆 | **B** |
+| 5 | WebUI 范围 | A 只读状态页 / **B 控制+观测面板** / C 完整运维台 | **B** |
+| 6 | 凭据安全存储 | A 仅 OS keyring / **B 仅加密文件+主密码** / C 双实现 | **B** |
+| 7 | 分发形态 | A 仅 npm / B 仅 Docker / **C Docker+npm** | **C**（后被 T1 裁剪） |
+| 8 | 路径围栏 | **A 仅命令护栏** / B 命令+路径围栏 | **A** |
+
+- **agent 输出**：8 轮后定型 LLMProvider 契约 `async complete(messages): Promise<{text,stopReason}>`、Guardrail 输入 `Action` 输出 `{severity,reasons}`、FeedbackClassifier 输出 `Feedback`、ApprovalGateway 接口。
+- **人工干预**：无逐轮干预；用户对每轮直接裁决。
+- **教训**：把"选项即方案对比"嵌入提问，既满足技能"propose 2-3 approaches"要求，又不额外消耗一轮对话；多选一比开放问答更省用户认知负荷。
+
+---
+
+## 2026-07-08 · 阶段 3：brainstorming — 4 节设计呈现 + 确认
+
+- **触发的技能**：`brainstorming`（present design）。
+- **task 编号**：BT-4。
+- **agent 输出**：分 4 节呈现——①架构/主循环状态机/LLMProvider/Mock/动作协议 ②治理护栏+HITL ③TDD 反馈闭环+记忆最小实现 ④凭据/分发/WebUI/CI/机制演示。同时替用户做了几个低风险默认决定（生产 LLM 走 OpenAI-compatible、工具集 6 个、JestParser、MemoryStore 文件式最小实现）并明示可否决。
+- **人工干预（关键）**：用户"全部确认"，但追加硬约束——**"个人课程项目、2 周内可完成、勿因过度工业级工程化而烂尾"**。这是本阶段最重要的人工输入。
+- **教训**：用户确认设计后追加的"可完成性"约束，优先级高于此前所有装饰性扩展；应主动识别并裁剪 gold-plating，而非等用户点名。
+
+---
+
+## 2026-07-08 · 阶段 3.5：范围裁剪 T1–T4（agent 响应人工干预）
+
+- **触发的技能**：`brainstorming`（设计修订）。
+- **task 编号**：BT-4（修订）。
+- **agent 输出**：提出 4 处减负裁剪——
+  - **T1**：分发 Docker+npm → **仅 Docker**（逆转用户阶段 2 第 7 问的 C 选项；点名给用户否决机会）。
+  - **T2**：WebUI WebSocket → **HTTP 轮询**（省 `ws` 管道）。
+  - **T3**：错误分类 4 类 → **3 类**（assertion/syntax/other；Parser 接口仍可插拔）。
+  - **T4**：每微功能一 worktree → **每大里程碑一 worktree**。
+  - 保底优先级：AC1 内核 → AC2 护栏 → AC3 反馈 → AC7 演示 → AC5 WebUI（可降只读）→ AC4 凭据 → AC6 CI。
+- **人工干预**：用户未否决 T1，等于接受裁剪。
+- **教训**：当某项裁剪逆转了用户此前显式选择时，必须单独点名提示，不可静默改。
+
+---
+
+## 2026-07-08 · 阶段 4：SPEC.md 撰写 + 自检 + 提交
+
+- **触发的技能**：`brainstorming`（write design doc）。
+- **task 编号**：BT-5。
+- **关键 context**：用户偏好文件名 `SPEC.md`（项目 §4.2 硬交付名）覆盖技能默认路径 `docs/superpowers/specs/...`。
+- **agent 输出**：写入 `SPEC.md`，覆盖 12 节：问题陈述、5 INVEST 用户故事、按模块功能规约、NFR（含 §4.2 凭据威胁模型表）、架构组件图+数据流+外部依赖、数据模型、凭据与分发设计、技术选型理由、验收标准、风险与未决、项目 A 专属「领域与机制设计」、2 周裁剪记录。
+- **Spec 自检（inline 修复 2 处不一致）**：
+  1. §3.4 危险模式库补"带 `Authorization`/`-H token` 头的外发请求"模式，与 §4.2 威胁表"凭据外传"行对齐。
+  2. §7.2 把 `<registry>` 占位符软化为"具体 registry/镜像名在 PLAN 定"，与未决项 U2 一致。
+- **commit hash**：`374a95b`（`docs: add CLAUDE.md and SPEC.md (brainstorming output)`），含 CLAUDE.md + SPEC.md，2 files / +322 行。
+- **人工干预**：用户确认设计可写 SPEC；裁剪范围被接受。
+- **教训**：SPEC 自检要专门做"跨节一致性"扫描（如威胁表 ↔ 模式库、超时值 ↔ 工具边界），单节内一致不够。
+
+---
+
+## 2026-07-08 · 阶段 5：设计签字 → 转入 writing-plans
+
+- **触发的技能**：`brainstorming`（transition）→ 即将触发 `writing-plans`。
+- **task 编号**：BT-6/BT-7。
+- **人工干预**：用户"设计已确认"，要求先填本日志再触发 writing-plans。
+- **agent 输出**：本日志 + 随后调用 `writing-plans` 生成 `PLAN.md`。
+- **教训**：brainstorming 的终止态是"调用 writing-plans"，不调用其它实现技能；签字前不写实现代码（§4 硬门）。
