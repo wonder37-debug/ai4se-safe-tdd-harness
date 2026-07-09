@@ -1954,6 +1954,8 @@ git add src/web/public/ src/web/webServer.ts test/staticFrontend.test.ts
 git commit -m "feat(web): static 3-panel frontend"
 ```
 
+> **深度 UI 重设计（feat/07-web-redesign, 实现 `bdc5a8e` + docs `docs: log web redesign phase`）**：在 feat/07-web-panel 之上做深度 UI 重构，全面采用 Anthropic 官网极简风格——珍珠白/暖灰纸面（`#f3f0ea`）+ 纯白卡片大圆角 + 极致柔和微阴影；serif display + sans body + mono data 混搭；"左控制栏 + 右主画板"两栏；纤细 Loop State 轨道（字重/淡化映射当前状态）；底层 JSON 翻译为自然语言气泡；测试失败 Feedback 渲染为卡其色 Blockquote（醒目提示断言行号 `file:line`），成功用极简绿底细线卡；人工审批卡含原因输入框（`placeholder="补充指示或拒绝原因…"`）+ `[Approve]`/`[Deny & 反馈]`，拒绝时把输入框内容作为 `reason` 回灌实现对话重定向。`test/staticFrontend.test.ts` 扩展为 2 测试（新增 `/app.js` 审批输入框 + Deny&反馈 断言，且改为始终 resolve 的 GET 采集器消除 RED 态挂起），全量 16 suites / 40 tests 绿，`npm run build` 成功。
+
 ---
 
 ## 任务 17：机制演示（§A.6 三幕）

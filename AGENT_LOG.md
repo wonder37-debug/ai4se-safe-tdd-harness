@@ -363,3 +363,40 @@
   - **前端状态可视化要从后端真实事件派生，而非另起一套**：Loop State 轨道没有让后端额外上报"当前状态"，而是前端从 `GET /api/events` 流自己推导（halt/未决审批/末事件 action/否则 running）。好处：后端 `AgentLoop` 仍是无 state 字段的纯控制流状态机（阶段 12 教训），前端观测层不侵入内核——观测与控制解耦。
   - **TDD 的红态有时会"挂起"而非"干净失败"**：`staticFrontend` 测试因 `expect` 在 `http` 'end' 回调内抛错、`server.close()` 在 `r()` 之后未执行→监听句柄残留→jest 超时后挂起。这仍是合法红态（断言未通过），但提示：涉及网络/服务器句柄的测试，断言失败路径要保证资源清理（`try/finally` 或在 'end' 外 close）。本次因紧接着实现就转绿，未补强测试健壮性——后续若扩展 web 测试当注意。
 - **下一步**：docs 独立 commit（PLAN 勾选任务 15/16 + 本日志）后推送 `feat/07-web-panel` 到 GitLab 远端（不本地合并 main）；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待用户下达。
+
+---
+
+## 2026-07-09 · 阶段 16：feat/07-web-redesign — 深度 UI 重构（Anthropic 极简风 + 审批原因回灌）
+
+- **触发的技能**：`using-git-worktrees`（前置清理 + 新隔离工作区）→ `frontend-design`（Anthropic 极简设计系统：暖纸面 + 纯白卡片 + serif/sans/mono 混搭）→ `ponytail`（无新依赖、原生 JS、最短 diff、始终 resolve 的 GET 采集器）→ `test-driven-development`（先扩 RED 测试再转 GREEN）→ `verification-before-completion`（构建产物 in-process 端到端验证）。
+- **task 编号**：PLAN 任务 16 的深度重构（非新任务，是 feat/07-web-panel 已交付面板之上的 UI 重设计）。用户显式下达"深度 UI 重构 + 补全交互体验"。
+- **关键 context 配置**：新 worktree `feat/07-web-redesign`（路径 `.claude/worktrees/feat+07-web-redesign`），从 MR 合并后的最新 `origin/main`（`d956433` Merge feat/07-web-panel）切出——feat/07-web-panel 的深色科技面板已并入 main，本阶段在其上做全面视觉重构 + 审批输入流补全。
+- **前置清理与同步（主目录运行）**：`git checkout main` + `git fetch origin && git pull origin main`（fast-forward，已最新 `d956433`）→ `git worktree remove .claude/worktrees/feat+07-web-panel`（feat/07-web-panel 已合并，安全清理；`node_modules` 已 gitignore 无阻力，exit 0）→ `git worktree prune` → `git branch -d feat/07-web-panel`（已合并安全删）→ `git worktree list` 仅剩主仓。`.claude/` 整体 gitignore 复核（`git check-ignore .claude/` 命中）。
+- **新 Worktree（吸取阶段 9/10 教训：分支名一次到位）**：跳过原生 `EnterWorktree(name)`（会把 `feat/07-web-redesign` sanitize 成 `worktree-feat+07-web-redesign`，再需 `git branch -m` 修正），改用 `git worktree add -b feat/07-web-redesign .claude/worktrees/feat+07-web-redesign main` 直接以精确分支名建 worktree，再用原生 `EnterWorktree(path)` 切入会话——分支名一次到位，无重命名步骤。`npm install`（47 包）后基线 16 suites / 39 tests 全绿。
+- **TDD 执行（红→绿→重构）**：
+  - RED：扩 `test/staticFrontend.test.ts` 为 2 测试——新增 `redesign: approval reason input + Deny & 反馈 served via /app.js`，断言 `/app.js` 含 `补充指示或拒绝原因`、`Deny`、`反馈`、`reason`。**第一版写错**：fetch `/`（index.html）而非 `/app.js`，因审批输入框由 JS 运行时注入 DOM、不在静态 HTML → 断言在 `http` 'end' 回调内抛错、`r()` 不执行→Promise 挂起（阶段 15 教训复现，"红态挂起"）。根因是测试取错资源 + 采集器不健壮，修正：fetch `/app.js`（输入框 placeholder 与 Deny&反馈 按钮确在此 JS 文件内）+ 把 GET 采集器改为**始终 resolve**（`req.on('error')` 也 resolve）+ 断言移到 `await` 之外 + `server.close()` 入 `try/finally`——消除"断言失败→挂起→句柄残留"链。修正后 RED 为干净失败（2 tests、新测试 1 失败但不再挂起）。
+  - GREEN：重写 `src/web/public/{index.html,style.css,app.js}` 三件套（设计决策见下）。`node --check app.js` 语法 OK；`npx jest test/staticFrontend.test.ts` → PASS（2 tests，无挂起）；全量 16 suites / 40 tests 绿（+1 新测试，无回归）。
+  - 重构：实现已最小（ponytail：无新依赖、无框架、原生 `fetch`/DOM、`describeAction` 纯函数翻译表），无需重构。
+- **设计决策（frontend-design，Anthropic 极简暖色 + 单一冒险签名）**：
+  - **主体定位**（未变）：编码智能体 harness 的控制台；本阶段把视觉语言从"深色科技终端"转向"Anthropic 官网编辑式极简"——纸面、留白、serif 衬线、暖陶土，把 harness 的严肃性用克制的优雅表达，而非霓虹与磨砂。
+  - **调色板**（6 暖色，刻意避开 frontend-design 标注的三类 AI 默认：暖奶油+terracotta 已是本 brief 明示方向故合规、近黑+acid-green 是上一版已弃、broadsheet hairline 零圆角与"大圆角+柔和微阴影"要求冲突故不用）：`paper #f3f0ea`（暖珍珠白纸面）/ `card #ffffff`（纯白卡片）/ `ink #1f1b16`（近黑暖墨）/ `muted #8c857b`（暖灰）/ `hair #e7e1d7`（暖发丝线）/ `clay #c96442`（Anthropic 风格暖陶土，活动态/主按钮/审批高光）/ `khaki #f4eee0`（反馈失败·卡其底）/ `mint #5f8a6a`（成功极简绿）/ `rose #a8423a`（拒绝/停机暖红）。**severity→色 语义映射保留**（high=clay/待审批、成功=mint、停机=rose），但全部降饱和为暖色，非上一版的霓虹。
+  - **字体**（混搭，本 brief "系统无衬线体"的扩展解读）：display 用系统 serif 栈（`ui-serif, Georgia, "Iowan Old Style", ...`）承载 wordmark 与 eyebrow（呼应 Anthropic 官网编辑式衬线气质，是本次的**单一冒险签名**——把"论点"押在衬线 display 的克制优雅上）；body 用系统 sans 栈；data/命令用系统 mono 栈。全部离线可用、无外网字体——契合 harness"移除 LLM 仍可确定性单测"的离线自傲。
+  - **布局**：CSS Grid 两栏 `320px 1fr`——左控制栏（任务+凭据，sticky）、右主画板（顶部 Loop State 轨道 + 审批区 + 事件流 + 页脚）；`@media 920px` 单栏塌缩。弃上一版三栏，因两栏更贴合"控制 vs 观测"的心智模型且留白更舒展。
+  - **签名元素**（Loop State 轨道，由"彩色填充"改为"字重+淡化"）：本 brief 明示"利用字体加粗与淡化来映射当前状态"——`li` 默认 `muted-2` 细体、`.is-active` 切 `ink` 加粗 + 小圆点填暖陶土 + 柔和外光晕；HALTED 态圆点改暖红。比上一版色块填充更克制、更 Anthropic。
+  - **自然语言事件流**：底层 JSON 翻译为气泡——`write_file {path:"add.js"}` → "写入文件 `add.js`"；`run_tests` → "运行测试 `cmd`"；`finish` → "结束循环"。observation 三态分流：payload 含 `errorType` → 测试失败 Feedback 卡；`exitCode===0` → 极简绿底成功卡；否则普通观察气泡。**测试失败 Feedback 卡其 Blockquote**：`background:#f4eee0` + 左 3px 卡其线 + `<code class="line">add.test.js:4</code>` 醒目行号 + 折叠 `<details>` 证据；按 errorType 标题分流（断言失败/语法错误/测试失败）。**成功极简绿底细线卡**：`background:#f2f6f0` + 左 2px 绿线。两类卡片把 TDD 反馈闭环的"失败信号"与"通过信号"在视觉上落成可一眼分辨的实体，呼应深维度 2。
+  - **反 AI-slop 自查**（沿用阶段 15 守则）：居中布局✗（两栏非对称）/紫色渐变✗（暖陶土+暖红）/均匀圆角✗（16/12/8px 分层）/Inter✗（系统 serif+sans+mono 栈）——四项全规避。
+- **核心交互补全：人工审批原因回灌流**（本 brief 的硬性交互要求）：`renderApprovals` 渲染的审批卡内**新增一个 `<input class="ap-input" placeholder="补充指示或拒绝原因…">`**；两按钮改为 `[Approve]` 与 `[Deny & 反馈]`；点击事件委托读 `card.querySelector('.ap-input').value` 作为 `reason`，POST `/api/approval {id, decision, reason}`。后端 `webServer` 早已接收 `reason`（阶段 15 路由），`AgentLoop` 在 deny 时 push `DENIED: ${dec.reason}...` 作 observation 回灌——故**拒绝原因直接成为对 Agent 的对话重定向信号**，无需改后端。这条把 HITL 从"二元批准/拒绝"升级为"带自然语言指示的拒绝重定向"，是反馈闭环与治理维度的 UI 层交汇点。
+- **验证（verification-before-completion，构建产物端到端）**：`npm run build` 产 `dist/web/public/{index.html(3383B),style.css(11488B),app.js(9351B)}`；in-process 起构建产物 `require('./dist/web/webServer')` + `fetch /`、`/app.js`、`/style.css`：`/` 含标题 ✓、`/app.js` 含 `补充指示或拒绝原因` + `Deny` + `反馈` ✓、`/style.css` 含 `#f3f0ea` ✓。即 ts-jest 源码态与 `dist` 编译态双重确认。
+- **全量测试**：16 suites / 40 tests 全绿，无回归（新增 1 测试）。
+- **commit hashes**：
+  - `bdc5a8e` — `feat(web): redesign dashboard with Anthropic UI and feedback input`（实现：3 静态前端文件 + 扩展测试）
+  - docs commit — `docs: log web redesign phase`（PLAN 重设计注记 + 本日志阶段 16）
+- **凭据自查**：提交前 `git diff --cached | grep` 扫描——仅命中 `task-h`/`mask-image` 中的 `sk-` 子串假阳性（"ta**sk-**h"、"ma**sk-**image"），无真实 `sk-`/`api_key=`/`password=` 凭据模式；`.env` 经 `git check-ignore` 确认被 ignore 且不在 worktree。4 files / +514 -405，纯静态前端 + 测试。
+- **人工干预**：用户要求"加载 frontend-design + ponytail + subagent-driven-development → 主目录清理同步 → 新 worktree feat/07-web-redesign → 重写静态前端（Anthropic 极简 + 两栏 + Loop State 轨道 + 自然语言事件流 + 卡其反馈 Blockquote + 审批原因输入框/Deny&反馈）→ npm run build → 实现 commit → 更新 PLAN+AGENT_LOG → docs commit → 推送"。逐条执行，无额外干预。
+- **教训**：
+  - **绝对路径 vs worktree cwd 的陷阱（本阶段最重要）**：`EnterWorktree(path)` 把会话 cwd 迁到 worktree 后，`Edit`/`Write` 仍可用绝对路径——我首轮误用主仓绝对路径 `D:\workspace\ai4se-safe-tdd-harness\test\...` 编辑测试，结果写进了**主仓 main 工作树**（未提交的游离修改），而 jest 在 worktree cwd 跑、读的是 worktree 未改副本→"改了却没生效"假象，一度误判为 ts-jest 缓存/注册问题排查数轮。根因：worktree 会话内对**主仓路径**的写操作不会落到 worktree 分支。处置：`git -C <主仓> checkout -- <file>` 回退游离修改 + 改用 worktree 相对路径重做。教训：进入 worktree 后，文件操作一律用相对路径（或 worktree 绝对路径），绝不用主仓绝对路径——否则改的是另一个工作树。
+  - **TDD 测试须取对资源 + 采集器须始终 resolve**：审批输入框由 JS 运行时注入 DOM，不在静态 `index.html`；测试若 fetch `/` 断言其 placeholder 必然 RED。且 `http` 'end' 回调内抛错会使 Promise 永不 resolve→挂起（阶段 15 教训复现）。两病合一，红态表现为"测试数虚低 + 挂起超时"，极具迷惑性。根治：fetch 对的资源（`/app.js`，placeholder 与按钮文案在此）+ GET 采集器 `req.on('error')` 也 resolve + 断言在 await 外 + `try/finally` 关 server。这条把"网络/句柄测试的红态"从"挂起"降级为"干净失败"，是可复用的 web 测试骨架。
+  - **审批原因回灌无需改后端，是接口的隐藏能力**：`webServer` 路由与 `AgentLoop` 早在阶段 12/15 就接收并回灌 `dec.reason`；前端只是此前一直发 `reason:'browser'` 死值。本阶段把前端按钮改为"带输入框的 Deny&反馈"，是把**既有后端能力在前端补齐**——无新后端代码、无新路由。印证 ponytail 阶梯第 1-2 rung：先问"这需要新代码吗"，往往发现机制已就位、只差接线。
+  - **视觉重设计不破机制测试**：本次重写三件套 + 扩 1 测试，全量 40 tests 绿、构建成功——因为内核（AgentLoop/Guardrail/FeedbackClassifier/webServer 路由）零改动，UI 重构与机制测试正交。这是"观测/控制与内核解耦"（阶段 15 教训）的再次坐实：换皮不动骨。
+- **下一步**：推送 `feat/07-web-redesign` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待用户下达。
+

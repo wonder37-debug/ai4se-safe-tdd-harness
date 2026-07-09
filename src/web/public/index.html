@@ -7,74 +7,75 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div class="bg-grid" aria-hidden="true"></div>
-
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark">◢◣</span>
-      <h1 class="wordmark">AI4SE<span class="dot">·</span>Safe-TDD-Harness</h1>
-      <span class="brand-sub">self-coded agent kernel</span>
-    </div>
-    <ol class="state-rail" id="stateRail" aria-label="loop state">
-      <li data-state="RUNNING">RUNNING</li>
-      <li data-state="APPROVAL_PENDING">APPROVAL_PENDING</li>
-      <li data-state="EXECUTING">EXECUTING</li>
-      <li data-state="HALTED">HALTED</li>
-    </ol>
-  </header>
-
-  <main class="grid">
-    <section class="panel panel--task" aria-labelledby="task-h">
-      <h2 id="task-h" class="eyebrow">01 · 任务</h2>
-      <p class="hint">描述要 agent 完成的编码任务，指定工作区目录后启动。</p>
-      <label class="field">
-        <span class="field-label">任务描述</span>
-        <textarea id="task" rows="4" placeholder="例如：实现 add(a,b) 返回两数之和，并用 Jest 验证"></textarea>
-      </label>
-      <label class="field">
-        <span class="field-label">工作区目录</span>
-        <input id="cwd" placeholder="/workspace">
-      </label>
-      <button id="start" class="btn btn--primary">启动循环</button>
-
-      <div class="divider"><span>凭据</span></div>
-      <label class="field">
-        <span class="field-label">主密码</span>
-        <input id="master" type="password" placeholder="解锁加密凭据">
-      </label>
-      <label class="field">
-        <span class="field-label">CLAUDE_API_KEY</span>
-        <input id="apikey" type="password" placeholder="永不回显，AES-256-GCM 落盘">
-      </label>
-      <button id="setkey" class="btn">保存 Key</button>
-      <p class="keystatus" id="keystatus">key 状态：未知</p>
-    </section>
-
-    <section class="panel panel--events" aria-labelledby="events-h">
-      <header class="panel-head">
-        <h2 id="events-h" class="eyebrow">02 · 事件流</h2>
-        <div class="panel-tools">
-          <span class="counter" id="iterCounter">iter 0</span>
-          <button id="clearEvents" class="btn btn--ghost">清空</button>
-        </div>
+  <div class="app">
+    <!-- ───────── 左侧控制栏 ───────── -->
+    <aside class="sidebar" aria-label="控制栏">
+      <header class="brand">
+        <h1 class="wordmark">AI4SE<span class="dot">·</span>Safe-TDD-Harness</h1>
+        <p class="brand-sub">self-coded agent kernel</p>
       </header>
-      <ol class="event-stream" id="events" aria-live="polite">
-        <li class="event event--empty">等待事件…提交任务后这里会实时流出 action / observation / 审批 / halt。</li>
-      </ol>
-    </section>
 
-    <section class="panel panel--approvals" aria-labelledby="appr-h">
-      <h2 id="appr-h" class="eyebrow">03 · 人工审批</h2>
-      <p class="hint">高危动作被护栏拦截后在此挂起，等待你的裁决。</p>
-      <div id="approvals" class="approvals">
-        <p class="approval--empty">当前无待审批请求。</p>
+      <section class="block">
+        <h2 class="eyebrow">任务</h2>
+        <p class="hint">描述要 agent 完成的编码任务，指定工作区目录后启动循环。</p>
+        <label class="field">
+          <span class="field-label">任务描述</span>
+          <textarea id="task" rows="4" placeholder="例如：实现 add(a,b) 返回两数之和，并用 Jest 验证"></textarea>
+        </label>
+        <label class="field">
+          <span class="field-label">工作区目录</span>
+          <input id="cwd" placeholder="/workspace">
+        </label>
+        <button id="start" class="btn btn--primary">启动循环</button>
+      </section>
+
+      <section class="block">
+        <h2 class="eyebrow">凭据</h2>
+        <label class="field">
+          <span class="field-label">主密码</span>
+          <input id="master" type="password" placeholder="解锁加密凭据">
+        </label>
+        <label class="field">
+          <span class="field-label">CLAUDE_API_KEY</span>
+          <input id="apikey" type="password" placeholder="永不回显，AES-256-GCM 落盘">
+        </label>
+        <button id="setkey" class="btn">保存 Key</button>
+        <p class="keystatus" id="keystatus">key 状态：未知</p>
+      </section>
+    </aside>
+
+    <!-- ───────── 右侧主画板 ───────── -->
+    <main class="canvas">
+      <!-- 顶部纤细的 Loop State 轨道：用字重与淡化映射当前状态 -->
+      <div class="rail-wrap">
+        <ol class="state-rail" id="stateRail" aria-label="loop state">
+          <li data-state="RUNNING"><span class="dot"></span>RUNNING</li>
+          <li data-state="APPROVAL_PENDING"><span class="dot"></span>PENDING</li>
+          <li data-state="EXECUTING"><span class="dot"></span>EXECUTING</li>
+          <li data-state="HALTED"><span class="dot"></span>HALTED</li>
+        </ol>
+        <span class="iter" id="iterCounter">iter 0</span>
       </div>
-    </section>
-  </main>
 
-  <footer class="footer">
-    <span>轮询 1s · HTTP 非 WS · 单任务并发 · 移除 LLM 后内核仍可确定性单测</span>
-  </footer>
+      <!-- 人工审批区（无待审批时折叠为安静提示） -->
+      <section class="approvals" id="approvals" aria-live="polite"></section>
+
+      <!-- 自然语言事件流 -->
+      <section class="stream-wrap">
+        <header class="stream-head">
+          <h2 class="eyebrow">事件流</h2>
+          <button id="clearEvents" class="btn btn--ghost">清空</button>
+        </header>
+        <ol class="stream" id="events" aria-live="polite">
+          <li class="event event--empty">等待事件……提交任务后，这里会以自然语言实时流出 agent 的每一步。</li>
+        </ol>
+      </section>
+
+      <footer class="footer">
+        轮询 1s · HTTP 非 WS · 单任务并发 · 移除 LLM 后内核仍可确定性单测
+      </footer>
+    </main>
+  </div>
 
   <script src="/app.js"></script>
 </body>
