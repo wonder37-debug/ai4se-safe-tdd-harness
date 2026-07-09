@@ -330,3 +330,36 @@
   - **stuck 安全阀会放大测试基础设施故障**：stuck 判定逻辑本身正确（连续两轮同断言点），但当 runner 根本没跑起来时，每轮都是同样的 `'other'` 失败→key 相同→必然两轮触发 stuck。说明安全阀的"同 key"前提是"runner 真的在跑且产出可分类反馈"——前提不成立时它会误拉闸。这是反馈闭环的边界：它防 agent 死循环，不防测试环境缺失，后者靠测试自身跨平台性保证。
   - **Git Bash 模拟 PowerShell 的 PATH 陷阱**：`PATH="C:\Windows\..."` 会被 MSYS 把 `C:` 的冒号当 Unix 分隔符、PATH 损坏成 `C;D:\...`，连 node 都找不到——非被测代码问题，是模拟环境假象。忠实模拟须 `cmd.exe //c "set PATH=...&& ..."` 在 cmd 原生层设 PATH。教训：验证跨平台时，模拟环境本身要先验证忠实性，否则会追错方向（一度以为 `node run-tests.js` 也依赖 sh，实则是模拟 PATH 损坏）。
 - **下一步**：提交 `fix(test): make loop integration tests platform-agnostic`（test + AGENT_LOG）并直接推送远端 main（用户显式授权直推 main，跳过 MR）；剩余任务 15 WebServer 起待用户下达。
+
+---
+
+## 2026-07-09 · 阶段 15：feat/07-web-panel — WebServer 轮询路由 + 深色科技三栏前端面板
+
+- **触发的技能**：`using-git-worktrees`（前置清理 + 新隔离工作区）→ `test-driven-development`（任务 15/16 红→绿→重构）→ `frontend-design`（三栏面板设计系统）→ `web-artifacts-builder`（仅采纳其反 AI-slop 守则，弃用其 React 栈——见教训）。
+- **前置清理与同步（主目录）**：`git fetch && git pull origin main`（已最新）；`git worktree list` 仅剩主仓、本地无 `feat/06-core-loop` 分支、`.claude/worktrees/` 为空——清理目标已不存在，无操作。`git check-ignore` 确认 `.claude/` 整体被 ignore（worktree 内容绝不入仓）。
+- **新 Worktree**：原生工具 `EnterWorktree(name="feat/07-web-panel")` 创建于 `.claude/worktrees/feat+07-web-panel`，自动分支 `worktree-feat+07-web-panel`（`/`→`+`、加 `worktree-` 前缀）。`git branch -m feat/07-web-panel` 重命名为目标分支名（与远端 `feat/01`~`feat/06` 一致）。`worktree.baseRef=fresh` → 基于同步后的 origin/main。`npm install`（309 包）后基线 14 suites / 37 tests 全绿。
+- **TDD 执行（任务 15 红→绿→重构）**：
+  - RED：`test/webServer.test.ts`（GET /api/health 200；GET /api/events?since=0 返数组）→ `TS2307 Cannot find module '../src/web/webServer'`（合法 RED）。
+  - GREEN：`src/web/webServer.ts`（`startWebServer({port,eventStore,approval,creds,loopFactory})`：Node `http.createServer`，路由 GET `/api/health`|`/api/events`|`/api/key/status`|`/api/approvals`、POST `/api/key`|`/api/approval`|`/api/task`；`loopFactory` 异步起跑后其 halt 结果 `emit` 进 `EventStore`；`port:0` + `0.0.0.0` 监听）→ PASS（1 test）。全量 15 suites / 38 tests 无回归。
+  - 重构：无需。
+- **TDD 执行（任务 16 红→绿→重构）**：
+  - RED：`test/staticFrontend.test.ts`（GET `/` 须含 `AI4SE-Safe-TDD-Harness`）→ `/` 命中 404 JSON 分支，`expect` 在 'end' 回调内抛错、`server.close()` 未执行→jest 残留监听句柄挂起（确认红态，符合预期：路由未实现）。
+  - GREEN：`src/web/public/{index.html,style.css,app.js}` + 改 `webServer.ts` 增静态处理器（`safe.startsWith(PUB)` 防路径穿越、`.json` 拒绝以防 `dangerPatterns.json` 泄露、`mime()` 辅助）。三栏面板设计见下"设计决策"。
+  - 重构：清理 `app.js` 一处无意义 `box => box;` 占位行 + 提前 `let allSeen` 声明（消除重复声明）。`node --check` 语法 OK；编译态冒烟（`node dist/web/webServer.js`）确认 `/`(HTML 2907B) / `/style.css`(10713B) / `/app.js`(5360B) / `/api/health` / `/nope`(404) 全部符合。全量 16 suites / 39 tests 绿，`npm run build` 产 `dist/web/public/` 三文件。
+- **设计决策（frontend-design，深色科技 + 磨砂三栏）**：
+  - **主体定位**：编码智能体 harness 的控制台——终端、状态机、severity 分级、迭代计数、halt 原因是它的母语。面板唯一职责：提交任务 / 看实时事件流 / 审批高危动作。
+  - **调色板**（6+，深色科技，刻意避开 near-black+acid-green 默认套路）：`ink-900 #070b12` / `ink-800 #0e1420` / `frost rgba(255,255,255,.05)` / `cyan #22d3ee`（主·活动态）/ `amber #fbbf24`（severity low·待审批）/ `rose #fb7185`（high·deny·halt）/ `mint #34d399`（approve·通过）/ `text #e6edf3` / `muted #7d8a9c`。**severity→色 映射直接编码护栏领域语义**（high=rose/待审批=amber/通过=mint），是真实选择而非装饰。
+  - **字体**：系统 mono 栈作 display/数据（终端母语），系统 sans 栈作正文；display 克制（wordmark + 眉标）。**离线可用、无外网字体依赖**——契合 harness "移除 LLM 仍可确定性单测"的离线自傲。
+  - **签名元素（唯一冒险处）**：顶部 **Loop State 轨道**——把 `RUNNING→APPROVAL_PENDING→EXECUTING→HALTED` 这台自研状态机可视化，当前态点亮（cyan/amber/rose 随态变色）。这是 harness 的"论点"，非通用大数字+渐变。状态由前端从最新事件流派生（halt→HALTED、有 approval_request 无 decision→APPROVAL_PENDING、末事件为 action→EXECUTING、否则 RUNNING）。
+  - **布局**：CSS Grid 三栏（events 列 1.6fr 更宽，因它是主信息流）；`@media 1080px` 两栏、`720px` 单栏；磨砂玻璃 `backdrop-filter: blur` + 极淡网格背景 + 径向辉光；`prefers-reduced-motion` 关动画/过渡。
+  - **反 AI-slop 自查**（采纳 web-artifacts-builder 守则）：居中布局✗（三栏 grid）/紫色渐变✗（cyan+rose）/均匀圆角✗（14/9/6px 分层）/Inter✗（系统栈）——四项 slop 触发点全规避。
+- **commit hashes**：
+  - `4628357` — `feat(web): http server with polling routes`（任务 15）
+  - `8be8a8e` — `feat(web): static 3-panel dark-tech frontend with loop-state rail`（任务 16）
+- **人工干预**：用户要求"主目录清理同步 → 新 worktree feat/07-web-panel → 严格 TDD 任务 15/16 各独立 commit → docs 独立 commit → 推送不本地合并 main"。逐条执行。`EnterWorktree` 自动分支名 `worktree-feat+07-web-panel` 与目标 `feat/07-web-panel` 偏差，以 `git branch -m` 最小修正（与阶段 11-14 同型处置）。
+- **教训**：
+  - **技能栈须服从 SPEC 约束，不能机械套用**：`web-artifacts-builder` 的 React+Vite+Tailwind+shadcn 单 HTML 栈与本项目 SPEC §3.10"静态 HTML + 原生 JS（无框架）"、§8"无框架前端：省构建链"、§12 T2 裁剪直接冲突——若机械 `init-artifact.sh` 会引入构建链与框架依赖，违背 harness"自研、可移除 LLM 仍可单测"的纪律。处置：弃用其脚手架，仅采纳其**反 AI-slop 设计守则**（避居中/紫渐变/均匀圆角/Inter）作为自查清单。技能是工具箱不是命令——SPEC 与领域约束永远优先。
+  - **静态文件服务必须做路径穿越防护**：`path.join(PUB, rel)` 对 `../../etc/passwd` 会逃逸 `public/`。实现用 `path.normalize` 后 `safe.startsWith(PUB)` 收敛回 public 目录内，并额外拒 `.json`（防 `dangerPatterns.json` 等仓内 JSON 被当静态资源泄露）。这是 web 服务的最低安全线，与护栏维度的"安全是代码不是提示"同构。
+  - **前端状态可视化要从后端真实事件派生，而非另起一套**：Loop State 轨道没有让后端额外上报"当前状态"，而是前端从 `GET /api/events` 流自己推导（halt/未决审批/末事件 action/否则 running）。好处：后端 `AgentLoop` 仍是无 state 字段的纯控制流状态机（阶段 12 教训），前端观测层不侵入内核——观测与控制解耦。
+  - **TDD 的红态有时会"挂起"而非"干净失败"**：`staticFrontend` 测试因 `expect` 在 `http` 'end' 回调内抛错、`server.close()` 在 `r()` 之后未执行→监听句柄残留→jest 超时后挂起。这仍是合法红态（断言未通过），但提示：涉及网络/服务器句柄的测试，断言失败路径要保证资源清理（`try/finally` 或在 'end' 外 close）。本次因紧接着实现就转绿，未补强测试健壮性——后续若扩展 web 测试当注意。
+- **下一步**：docs 独立 commit（PLAN 勾选任务 15/16 + 本日志）后推送 `feat/07-web-panel` 到 GitLab 远端（不本地合并 main）；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待用户下达。

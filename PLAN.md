@@ -1707,7 +1707,7 @@ git commit -m "feat(approval): HttpApprovalGateway with pending resolvers"
 - 消费：`AgentLoop`、`HttpApprovalGateway`、`EventStore`、`CredentialStore`。
 - 产出：`startWebServer({port, loopFactory, approval, creds, eventStore})` 返回 `{server}`。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/webServer.test.ts`:
 ```ts
@@ -1749,12 +1749,12 @@ test('GET /api/health returns 200; events poll empty initially', async () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/webServer.test.ts`
 预期：FAIL——模块未找到。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/web/webServer.ts`:
 ```ts
@@ -1817,12 +1817,12 @@ function body(req: http.IncomingMessage): Promise<any> {
 }
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/webServer.test.ts`
 预期：PASS（1 个测试）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `4628357`
 
 ```bash
 git add src/web/webServer.ts test/webServer.test.ts
@@ -1839,7 +1839,7 @@ git commit -m "feat(web): http server with polling routes"
 
 **接口：** 产出三栏 UI（任务输入 / 事件流 / 审批）。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `test/staticFrontend.test.ts`:
 ```ts
@@ -1859,12 +1859,12 @@ test('GET / serves index.html', async () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/staticFrontend.test.ts`
 预期：FAIL——`/` 返回 404。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `src/web/public/index.html`:
 ```html
@@ -1942,12 +1942,12 @@ function mime(p: string): string {
 ```
 说明：`__dirname` 在 commonjs 编译产物 `dist/web/webServer.js` 下可用，`public/` 随之部署——构建时拷入 `dist`（任务 17 Dockerfile 处理）；测试在 ts-jest 源码态运行，`path.join(__dirname,'..','public')` 即 `src/web/public`。✓
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/staticFrontend.test.ts`
 预期：PASS。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `8be8a8e`
 
 ```bash
 git add src/web/public/ src/web/webServer.ts test/staticFrontend.test.ts
