@@ -1,15 +1,21 @@
 // AI4SE-Safe-TDD-Harness control panel — vanilla JS, HTTP polling
+// Anthropic 极简风格：自然语言事件气泡 + 卡其反馈 Blockquote + 审批原因回灌
 const $ = (id) => document.getElementById(id);
 let since = 0;
 let lastIter = 0;
 let allSeen = [];
 
-// ---------- loop state derivation from latest events ----------
+// ───────── 工具 ─────────
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function truncate(s, n) { s = String(s); return s.length > n ? s.slice(0, n) + '…' : s; }
+
+// ───────── Loop State 派生（从最新事件流，不侵入内核） ─────────
 function deriveState(events) {
   if (!events.length) return null;
   const last = events[events.length - 1];
   if (last.type === 'halt') return 'HALTED';
-  // an approval_request without a following decision → pending
   const lastReqIdx = (() => {
     for (let i = events.length - 1; i >= 0; i--) if (events[i].type === 'approval_request') return i;
     return -1;
@@ -18,7 +24,6 @@ function deriveState(events) {
     const after = events.slice(lastReqIdx + 1);
     if (!after.some(e => e.type === 'approval_decision')) return 'APPROVAL_PENDING';
   }
-  // an action without a following observation/decision → executing
   if (last.type === 'action') return 'EXECUTING';
   return 'RUNNING';
 }
@@ -28,14 +33,79 @@ function renderState(state) {
   [...rail.children].forEach(li => li.classList.toggle('is-active', li.dataset.state === state));
 }
 
-// ---------- event stream ----------
-function fmtPayload(ev) {
+// ───────── 底层 JSON → 自然语言翻译 ─────────
+function describeAction(p) {
+  const a = p.args || {};
+  switch (p.tool) {
+    case 'write_file': return `写入文件 <code>${esc(a.path || '')}</code>`;
+    case 'read_file':  return `读取文件 <code>${esc(a.path || '')}</code>`;
+    case 'list_dir':   return `列出目录 <code>${esc(a.path || '.')}</code>`;
+    case 'run_shell':  return `执行 shell <code>${esc(truncate(a.command || '', 80))}</code>`;
+    case 'run_tests':  return `运行测试 <code>${esc(truncate(a.command || '', 80))}</code>`;
+    case 'finish':     return `结束循环`;
+    default:           return esc(p.tool);
+  }
+}
+
+// ───────── 事件渲染 ─────────
+function renderEvent(ev) {
+  const id = `<span class="e-id">#${ev.id}</span>`;
+  if (ev.type === 'action') {
+    return `<li class="event event--action">${id}<span class="e-body">${describeAction(ev.payload)}</span></li>`;
+  }
+  if (ev.type === 'observation') {
+    return renderObservation(ev, id);
+  }
+  if (ev.type === 'approval_request') {
+    const a = ev.payload?.action || {};
+    const cmd = a.args?.command ? ` <code>${esc(truncate(a.args.command, 60))}</code>` : '';
+    return `<li class="event event--approval_request">${id}<span class="e-body">等待审批 · ${esc(a.tool || '?')}${cmd}</span></li>`;
+  }
+  if (ev.type === 'approval_decision') {
+    const p = ev.payload || {};
+    const deny = p.decision === 'deny';
+    const txt = deny ? `已拒绝${p.reason ? ' · ' + esc(p.reason) : ''}` : '已批准';
+    return `<li class="event event--approval_decision${deny ? ' is-deny' : ''}">${id}<span class="e-body">${txt}</span></li>`;
+  }
+  if (ev.type === 'halt') {
+    const reason = ev.payload?.reason ?? JSON.stringify(ev.payload);
+    return `<li class="event event--halt">${id}<span class="e-body">循环结束 · ${esc(reason)}</span></li>`;
+  }
+  return `<li class="event">${id}<span class="e-body">${esc(JSON.stringify(ev.payload))}</span></li>`;
+}
+
+function renderObservation(ev, id) {
   const p = ev.payload;
-  if (ev.type === 'action') return `${p.tool}  ${JSON.stringify(p.args)}`;
-  if (ev.type === 'approval_request') return `${p.action.tool}  ${JSON.stringify(p.action.args)}  ← ${p.reasons.join('; ')}`;
-  if (ev.type === 'approval_decision') return `${p.decision}  ${p.reason ?? ''}`;
-  if (ev.type === 'halt') return `halt: ${JSON.stringify(p)}`;
-  return JSON.stringify(p);
+  // 测试失败 Feedback（run_tests 失败时 payload 是结构化 Feedback 对象）
+  if (p && typeof p === 'object' && 'errorType' in p) {
+    return feedbackCard(id, p);
+  }
+  // 成功：退出码 0 → 极简绿底细线卡片（测试通过 / shell 成功）
+  if (p && p.exitCode === 0) {
+    return `<li class="event event--feedback-ok">${id}<span class="e-body">测试通过 · 退出码 0</span></li>`;
+  }
+  // 普通观察气泡
+  let body = '观察';
+  if (p && p.ok === false) body = '执行失败 · ' + esc(truncate(p.error || p.stderr || '', 120));
+  else if (p && typeof p.content === 'string') body = esc(truncate(p.content, 120));
+  return `<li class="event event--observation">${id}<span class="e-body">${body}</span></li>`;
+}
+
+// 测试失败：卡其色 Blockquote 引用卡片，醒目提示断言失败的行号
+function feedbackCard(id, fb) {
+  const labels = { assertion: '断言失败', syntax: '语法错误', other: '测试失败' };
+  const label = labels[fb.errorType] || '测试失败';
+  const loc = fb.assertion ? `${fb.assertion.file}:${fb.assertion.line}` : '';
+  const failedTests = (fb.failedTests || []).map(esc).join(' · ');
+  let html = `<li class="event event--feedback-fail">${id}<div class="fb-body">` +
+    `<div class="fb-title">⚠ ${esc(label)}${failedTests ? ' · ' + failedTests : ''}</div>`;
+  if (loc) html += `<div class="fb-loc">位于 <code class="line">${esc(loc)}</code></div>`;
+  if (fb.hint) html += `<div class="fb-hint">${esc(fb.hint)}</div>`;
+  if (fb.evidence) {
+    html += `<details><summary>错误证据</summary><pre>${esc(truncate(fb.evidence, 800))}</pre></details>`;
+  }
+  html += `</div></li>`;
+  return html;
 }
 
 function appendEvents(events) {
@@ -44,23 +114,13 @@ function appendEvents(events) {
   if (empty) empty.remove();
   for (const ev of events) {
     if (ev.iter) lastIter = Math.max(lastIter, ev.iter);
-    const li = document.createElement('li');
-    li.className = `event event--${ev.type}${ev.type === 'approval_decision' && ev.payload?.decision === 'deny' ? ' is-deny' : ''}`;
-    li.innerHTML =
-      `<span class="e-id">#${ev.id}</span>` +
-      `<span class="e-type">${ev.type}</span>` +
-      `<span class="e-body">${esc(fmtPayload(ev))}</span>`;
-    list.appendChild(li);
+    list.insertAdjacentHTML('beforeend', renderEvent(ev));
   }
   list.scrollTop = list.scrollHeight;
   $('iterCounter').textContent = `iter ${lastIter}`;
 }
 
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-// ---------- approvals ----------
+// ───────── 人工审批流：原因输入框 + Deny & 反馈 ─────────
 async function renderApprovals() {
   const ap = await fetch('/api/approvals').then(r => r.json()).catch(() => []);
   const box = $('approvals');
@@ -70,16 +130,19 @@ async function renderApprovals() {
   }
   box.innerHTML = '';
   for (const a of ap) {
-    const card = document.createElement('div');
+    const card = document.createElement('article');
     card.className = 'approval-card';
     const cmd = a.action?.args?.command ?? JSON.stringify(a.action?.args ?? {});
     card.innerHTML =
-      `<div class="ac-tool">⚙ ${esc(a.action?.tool ?? '?')}</div>` +
-      `<div class="ac-cmd">${esc(String(cmd))}</div>` +
-      `<div class="ac-reasons">${esc(a.reasons.join(' · '))}</div>` +
+      `<div class="ac-head"><span class="ac-tool">${esc(a.action?.tool ?? '?')}</span><span class="ac-sev">高危</span></div>` +
+      `<pre class="ac-cmd">${esc(String(cmd))}</pre>` +
+      (a.reasons?.length ? `<div class="ac-reasons">${esc(a.reasons.join(' · '))}</div>` : '') +
+      // 人工审批卡片内的文本输入框：补充指示或拒绝原因
+      `<input class="ap-input" placeholder="补充指示或拒绝原因…" />` +
       `<div class="ac-actions">` +
-        `<button class="btn btn--approve" data-id="${esc(a.id)}" data-d="approve">批准</button>` +
-        `<button class="btn btn--deny" data-id="${esc(a.id)}" data-d="deny">拒绝</button>` +
+        `<button class="btn btn--approve" data-id="${esc(a.id)}" data-d="approve">Approve</button>` +
+        // 拒绝时把输入框内容作为 reason 发送，实现对 Agent 的对话重定向
+        `<button class="btn btn--deny" data-id="${esc(a.id)}" data-d="deny">Deny &amp; 反馈</button>` +
       `</div>`;
     box.appendChild(card);
   }
@@ -88,18 +151,21 @@ async function renderApprovals() {
 $('approvals').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-id]');
   if (!b) return;
-  decide(b.dataset.id, b.dataset.d);
+  const card = b.closest('.approval-card');
+  const input = card?.querySelector('.ap-input');
+  const reason = input ? input.value : '';
+  decide(b.dataset.id, b.dataset.d, reason);
 });
 
-function decide(id, d) {
+function decide(id, d, reason) {
   fetch('/api/approval', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, decision: d, reason: 'browser' }),
+    body: JSON.stringify({ id, decision: d, reason: reason || '' }),
   }).then(renderApprovals);
 }
 
-// ---------- key status ----------
+// ───────── 凭据状态 ─────────
 async function renderKeyStatus() {
   try {
     const s = await fetch('/api/key/status').then(r => r.json());
@@ -109,7 +175,7 @@ async function renderKeyStatus() {
   } catch {}
 }
 
-// ---------- polling loop ----------
+// ───────── 轮询主循环 ─────────
 async function poll() {
   try {
     const evs = await fetch(`/api/events?since=${since}`).then(r => r.json());
@@ -123,7 +189,7 @@ async function poll() {
   } catch {}
 }
 
-// ---------- actions ----------
+// ───────── 用户动作 ─────────
 $('start').onclick = () => {
   if (!$('#task').value.trim()) return;
   fetch('/api/task', {
