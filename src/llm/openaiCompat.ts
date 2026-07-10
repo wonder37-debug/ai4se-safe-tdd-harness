@@ -11,17 +11,25 @@ export class OpenAICompatProvider implements LLMProvider {
     this.fetchImpl = opts.fetch ?? fetch;
   }
   async complete(messages: Message[]): Promise<{ text: string; stopReason: string }> {
-    const res = await this.fetchImpl(`${this.opts.baseUrl}/v1/chat/completions`, {
+    // 智能拼接：如果 baseUrl 已以 /v1 结尾，不再重复追加（兼容 https://.../v1 与 https://... 两种写法）
+    const base = this.opts.baseUrl.replace(/\/+$/, '');
+    const url = base.endsWith('/v1') ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
+    const res = await this.fetchImpl(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.opts.apiKey}` },
-      body: JSON.stringify({ model: this.opts.model ?? 'gpt-4o-mini', messages, temperature: 0 }),
+      body: JSON.stringify({ model: this.opts.model ?? 'qwen-flash', messages, temperature: 0 }),
     });
     if (!res.ok) {
+      // 防御式读取 body：真实 Response 有 .text()，但单测 mock 可能只提供 .json()；
+      // 两者都兼容，body 读取失败也不影响按状态码抛错。
+      let body = '';
+      try {
+        body = typeof (res as any).text === 'function' ? await (res as any).text() : JSON.stringify(await (res as any).json());
+      } catch { /* 忽略 body 读取失败，仍按状态码抛错 */ }
       if (res.status >= 400 && res.status < 500) {
-        const e = await res.json().catch(() => ({}));
-        throw new AuthError(`auth/http ${res.status}: ${JSON.stringify(e)}`);
+        throw new AuthError(`auth/http ${res.status}: ${body}`);
       }
-      throw new Error(`provider http ${res.status}`);
+      throw new Error(`provider http ${res.status}: ${body}`);
     }
     const data: any = await res.json();
     const text = data?.choices?.[0]?.message?.content ?? '';

@@ -218,16 +218,16 @@ async function poll() {
 
 // ───────── 用户动作 ─────────
 $('start').onclick = () => {
-  if (!$('#task').value.trim()) return;
+  if (!$('task').value.trim()) return;
   fetch('/api/task', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task: $('#task').value, cwd: $('#cwd').value }),
+    body: JSON.stringify({ task: $('task').value, cwd: $('cwd').value }),
   });
 };
 $('setkey').onclick = () => {
-  const key = $('#apikey').value;
-  const master = $('#master').value;
+  const key = $('apikey').value;
+  const master = $('master').value;
   if (!key || !master) return;
   fetch('/api/key', {
     method: 'POST',

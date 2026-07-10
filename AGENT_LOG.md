@@ -455,3 +455,29 @@
   - **逐字抄 PLAN 不如对照 SPEC 验收标准核一遍**：PLAN Dockerfile 的 `CMD` 缺 `--web` 是潜在 bug——靠 SPEC §7.2/AC5"docker run 必起面板"的验收标准才核出。计划是活文档，交付时以验收标准为终审。
   - **既有能力已就位时不增不改**：`.gitlab-ci.yml` 早期已含 `unit-test`，PLAN"新增 job"指令过期——ponytail/surgical 下确认现状满足即止，不为"对齐 PLAN 文字"而改。
 - **下一步**：推送 `feat/08-demo-delivery` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR。PLAN 全 18 任务收口——后续若用户下达，可做最终交付复核/演示录制等，但无既定 PLAN 任务待办。
+
+---
+
+### 2026-07-10 · 阶段 19：清理前一轮"真实 LLM 联调"残留（人工评审修订）
+
+- **背景**：前一轮由另一个 AI 接入阿里云百炼 qwen-flash，修复了 4 个真实 bug（app.js `$('#x')` 选择器错误 / openaiCompat URL 重复 `/v1` / agentLoop `role:'observation'` 不被 OpenAI 接受 / systemPrompt 无 few-shot 致 qwen 不输出 `action` 块），让简单任务（写 add.js + finish）可跑通。但改动**未提交、直接堆在 main 工作区**，且留下多处违反硬性要求的残留——本轮做人工评审式清理，保留正确修复、清除违规内容。
+- **Superpowers 技能**：`requesting-code-review` / `receiving-code-review` 视角驱动——对前一轮改动先做 spec 合规判定（§3.1 凭据、§A.4-B/C 机制可单测、§4.7 干净历史），再决定保留/修复/删除。
+- **保留的正确修复**（4 个，方向正确，本轮仅清其调试残留）：
+  - `src/web/public/app.js`：`$('#task')`→`$('task')`（`$` 即 `getElementById`，无需 `#`）。
+  - `src/llm/openaiCompat.ts`：URL 去重 `/v1`（`endsWith('/v1')` 判定）。
+  - `src/loop/agentLoop.ts`：`role:'observation'`→`role:'user'` + `Observation:` 前缀（OpenAI 仅接受 system/user/assistant/tool）；`catch` 中 emit `provider_error` halt 事件（真实事件，非调试日志）。
+  - `src/index.ts`：`makeLoopFactory` 的 `systemPrompt` 加 few-shot 示例与工具清单，让 qwen-flash 输出合规 `action` 块。
+- **清除的违规残留**：
+  1. **凭据泄漏（最严重，§3.1）**：`scripts/start-web-with-llm.bat` 硬编码明文 key（阿里云百炼 sk- 前缀）——**删除文件**（不 commit 该 key）。提交前 `grep -rn 'sk-' .`（排除 `.git/.env/node_modules`）确认树内无明文 key。
+  2. **测试回归（CI 会红）**：前一轮把 openaiCompat 错误分支 `res.json()` 改为 `res.text()`，但既有单测 mock 只提供 `.json()`，致 `4xx throws AuthError` 失败（`res.text is not a function`）。本轮改为**防御式 body 读取**：`typeof res.text==='function' ? await res.text() : JSON.stringify(await res.json())`，兼容真实 Response 与最小 mock——`npm test` 由 53→54 通过，原失败用例转绿。
+  3. **调试日志残留**：删除 `src/index.ts` 6 处、`src/llm/openaiCompat.ts` 3 处 `console.error`（含 `[OpenAICompat] LLM 返回内容` 会把 LLM 响应写入 stderr）；保留 `index.ts` 顶层 `main().catch` 的 `console.error(e)`（正常 CLI 错误输出）。
+  4. **调试端点**：删除 `src/web/webServer.ts` 的 `GET /api/debug`（暴露 env 状态、引用错误 env 名 `CLAUDE_API_KEY`，无测试引用）。
+  5. **仓库污染（§4.7）**：删除根目录 scratch 文件 `add.js/add.test.js/cli-run.js/run-web.js/test-api.js/test-decrypt.js` 与 `scripts/` 下两脚本；`.gitignore` 追加 `.idea/`。
+- **保留**：`test/integration/real-llm.test.ts`（`REAL_LLM_TEST=true` 守卫，CI 不触网、skip 通过，满足 §A.6"核心机制不依赖网络"——非 scratch，纳入提交）。
+- **验证**：`npm run build` 通过；`npm test` 20 suites / 54 passed + 1 skipped；`grep console.error src/` 仅剩 `index.ts:96` 顶层 catch；`grep -rn 'sk-'` 树内无明文 key 命中（仅 `.env` 与 `.git` 内历史性引用，均已忽略/未跟踪）。
+- **流程偏离说明（§3.6）**：本轮按用户指示**直接在 main 提交**，未走 worktree/PR（plan 中本拟开 `fix/real-llm-cleanup` 分支，用户改为主干直提）。属合理偏离，记录于此。
+- **人工干预点**：用户在对话中明文粘贴了 API key——该 key 已在对话与被删的 .bat 中出现，**已在回复中提醒用户轮换**；仓库本身经核查无 key 入历史。
+- **教训**：
+  - **联调改动必须即时清理调试日志与 scratch**：前一轮"先让它跑通"留下的 `console.error` 与 scratch 文件，差点把明文 key 带进提交。联调期的临时日志/脚本应视为"待清理垃圾"，跑通即删，不跨轮遗留。
+  - **改实现要回归既有单测**：`res.json()`→`res.text()` 这种"看着对"的改动直接打挂了既有 mock；改完跑一遍全量测试是最低门槛。防御式读取（两种 body API 都兼容）比硬切到 `.text()` 更稳。
+  - **凭据安全是硬红线**：把 key echo 到 .bat 里"方便用户看"是典型的便利压倒安全——§3.1 不留口子。引导用户走 Web 面板/加密文件录入，绝不在脚本里留明文。

@@ -40,11 +40,15 @@ export class AgentLoop {
       iter++;
       let resp;
       try { resp = await this.deps.llm.complete(this.messages); }
-      catch { return { haltReason: 'provider_error', iterations: iter }; }
+      catch (e: any) {
+        const errMsg = `provider_error: ${String(e?.message ?? e)}`;
+        this.sink.emit({ type: 'halt', payload: { reason: 'provider_error', error: errMsg }, iter });
+        return { haltReason: 'provider_error', iterations: iter };
+      }
       this.messages.push({ role: 'assistant', content: resp.text });
       const acts = ActionProtocol.parse(resp.text);
       if (acts.length === 0) {
-        this.messages.push({ role: 'observation', content: 'no action block found; emit a fenced ```action {...}``` block' });
+        this.messages.push({ role: 'user', content: 'Observation: no action block found; emit a fenced ```action {...}``` block' });
         continue;
       }
       const action = acts[0];
@@ -62,11 +66,11 @@ export class AgentLoop {
         const dec = await this.deps.approval.request(action, verdict.reasons);
         this.sink.emit({ type: 'approval_decision', payload: dec, iter });
         if (dec.decision === 'deny') {
-          this.messages.push({ role: 'observation', content: `DENIED: ${dec.reason} (reasons: ${verdict.reasons.join('; ')})` });
+          this.messages.push({ role: 'user', content: `Observation: DENIED: ${dec.reason} (reasons: ${verdict.reasons.join('; ')})` });
           continue;
         }
       } else if (verdict.severity === 'low') {
-        this.messages.push({ role: 'observation', content: `WARN(low): ${verdict.reasons.join('; ')}` });
+        this.messages.push({ role: 'user', content: `Observation: WARN(low): ${verdict.reasons.join('; ')}` });
       }
 
       // 执行
@@ -79,14 +83,14 @@ export class AgentLoop {
         const key = fb.assertion ? `${fb.assertion.file}:${fb.assertion.line}` : fb.errorType;
         if (key === lastFailKey) { sameCount++; } else { sameCount = 1; lastFailKey = key; }
         const content = JSON.stringify(fb);
-        this.messages.push({ role: 'observation', content });
+        this.messages.push({ role: 'user', content: `Observation: ${content}` });
         this.sink.emit({ type: 'observation', payload: fb, iter });
         if (sameCount >= 2) {
           this.sink.emit({ type: 'halt', payload: { reason: 'stuck', key }, iter });
           return { haltReason: 'stuck', iterations: iter };
         }
       } else {
-        this.messages.push({ role: 'observation', content: JSON.stringify(obs) });
+        this.messages.push({ role: 'user', content: `Observation: ${JSON.stringify(obs)}` });
         this.sink.emit({ type: 'observation', payload: obs, iter });
       }
     }

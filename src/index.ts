@@ -50,8 +50,26 @@ export function makeLoopFactory(opts: LoopFactoryOpts) {
       memory: new MemoryStore(path.join(workCwd, '.ai4se-memory')),
       cwd: workCwd,
       maxIter: 20,
-      // ponytail: 任务经 systemPrompt 传入，免改 AgentLoop 构造签名（既有测试零回归）
-      systemPrompt: 'you are a safe coding agent. Emit one fenced ```action {...}``` block per turn. Complete this task:\n\n' + task,
+      systemPrompt: `You are a safe coding agent. In each turn, you MUST output exactly one fenced code block in this format:
+
+\`\`\`action
+{"tool": "tool_name", "args": {...}}
+\`\`\`
+
+Available tools:
+- write_file: {"path": "string", "content": "string"}
+- read_file: {"path": "string"}
+- run_shell: {"command": "string"}
+- run_tests: {"command": "string"}
+- finish: {}
+
+Example:
+\`\`\`action
+{"tool": "write_file", "args": {"path": "add.js", "content": "module.exports=(a,b)=>a+b;"}}
+\`\`\`
+
+Complete this task:
+${task}`,
       sink: opts.eventStore,
     });
     return loop.run();
