@@ -1967,7 +1967,7 @@ git commit -m "feat(web): static 3-panel frontend"
 
 **接口：** 复用 Guardrail、MockApprovalGateway、FeedbackClassifier、JestParser、ScriptedMock、AgentLoop。演示 ① 护栏 + HITL ② 反馈自修正 ③ 深行为（混淆绕过 + severity + 卡死停机）。
 
-- [ ] **步骤 1：写失败测试**
+- [x] **步骤 1：写失败测试**
 
 `demo/mechanism-demo.test.ts`:
 ```ts
@@ -2043,21 +2043,21 @@ describe('§A.6 mechanism demo', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npm run demo`
 预期：FAIL（测试引用已存在模块，但须确认 `demo/` glob 被命中——若直接通过说明 jest 配置已含 `demo/`；失败门是 `demo/` glob 未匹配）。确保 `jest.config.js` 的 `testMatch` 含 `**/demo/**/*.test.ts`（任务 1 已含）。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 无新实现——演示即装配既有模块。"实现"即步骤 1 的测试文件本身。若有断言失败，按各模块自身任务修复底层模块；不得削弱演示断言。
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npm run demo`
 预期：PASS（4 个测试）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `ef284a9`
 
 ```bash
 git add demo/mechanism-demo.test.ts
@@ -2073,7 +2073,7 @@ git commit -m "feat(demo): §A.6 three-act mechanism demo"
 
 **接口：** 产出 `docker build` → 可运行镜像；CI `unit-test` job；README 含必需章节。
 
-- [ ] **步骤 1：写失败测试（CI 契约）**
+- [x] **步骤 1：写失败测试（CI 契约）**
 
 基础设施无单元测试；"测试"即 CI job 名。用 grep 校验。
 
@@ -2094,12 +2094,12 @@ test('Dockerfile exists and is multi-stage', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试，验证失败**
+- [x] **步骤 2：运行测试，验证失败**
 
 运行：`npx jest test/ci.test.ts`
 预期：FAIL——`Dockerfile` 缺失，`.gitlab-ci.yml` 无 `unit-test:` job。
 
-- [ ] **步骤 3：写最小实现**
+- [x] **步骤 3：写最小实现**
 
 `Dockerfile`:
 ```dockerfile
@@ -2201,17 +2201,22 @@ npm run build && node dist/index.js --web
 .gitlab-ci.yml 定义了 unit-test job（npm ci && npm test），并含 SAST 与 secret-detection。
 ```
 
-- [ ] **步骤 4：运行测试，验证通过**
+- [x] **步骤 4：运行测试，验证通过**
 
 运行：`npx jest test/ci.test.ts && npm test`
 预期：PASS（ci.test 校验 Dockerfile + unit-test job；全量测试绿）。
 
-- [ ] **步骤 5：提交**
+- [x] **步骤 5：提交** ✅ `d3ffa46`
 
 ```bash
 git add Dockerfile .gitlab-ci.yml README.md src/index.ts test/ci.test.ts
 git commit -m "feat(dist): Dockerfile, CI unit-test job, README"
 ```
+
+> **最终交付（feat/08-demo-delivery, 任务 17 实现 `ef284a9` + 任务 18 实现 `d3ffa46` + docs）**：在 feat/07-web-ui-polish（`f2d308d`）之上完成 PLAN 最后两任务，全量 19 suites / 49 tests 绿 + `npm run demo` 4 绿 + `npm run build` 成功，`node dist/index.js --web` 实测 `/api/health`、`/api/key/status`、`/` 静态前端均正常。
+> - **任务 17**：`demo/mechanism-demo.test.ts` 逐字落地 §A.6 三幕——①护栏拦截 `rm -rf /` + HITL deny 回灌 ②注入 Jest 断言失败 → FeedbackClassifier 回灌 → ScriptedMock 下一轮修正到绿 ③`r""m` 混淆绕过 + severity 高/低/none + 连续两轮同断言点卡死停机。演示即装配既有内核模块，无新实现；red 门为 `npm run demo` 此前在 `demo/` 下无 `.test.ts`（"No tests found" exit 1），写后转 4 绿。
+> - **任务 18**：① `Dockerfile` 多阶段（`node:20-bookworm-slim` build→prod），**`CMD` 显式带 `--web`**——PLAN 原稿 `CMD ["node","dist/index.js"]` 仅打印 usage 即退，违反 SPEC §7.2 "docker run 必须能起 web 面板"，作根因修正。② `src/index.ts` 由 greet-only 桩重写为真实 `--web` 命令行入口，导出 `makeLoopFactory`：解析 `MASTER_PASSWORD` + AES-256-GCM 加密凭据 → 装配真实 `AgentLoop`（`OpenAICompatProvider`）；任务经 `systemPrompt` 注入，**不改 `AgentLoop` 构造签名**（既有测试零回归）；缺主密码/缺 `API_BASE_URL`/凭据不可解三条短路均返回 `provider_error` 且不触网。`greet` 保留以守 smoke 契约，`main()` 以 `require.main===module` 守卫避免测试期触发。③ `.gitlab-ci.yml` **已有** `unit-test:` job，无需改动（surgical，不画蛇添足）。④ `README.md` 整替换 GitLab 模板，含获取/运行/凭据安全配置指南（SPEC §4.2 威胁模型表）/已知限制/CI。⑤ `test/ci.test.ts` 契约测试（unit-test job + Dockerfile 多阶段，红门为 Dockerfile 缺失）+ `test/webEntry.test.ts` **离线** TDD 守 `makeLoopFactory` 三条不触网安全分支（PLAN 未规定，按 ponytail"非平凡逻辑留一个可运行检查"补）。
+> - **心得**：① TDD 红门要诚实——演示类任务"装配既有绿模块"本无自然红，red 门退化为"命令找不到测试"（`No tests found`）；诚实记录而非伪称失败。② 产品胶水（`--web` 接线）默认无单测，但可把"缺凭据即短路不触网"的安全分支抽成可离线单测，既守 TDD 又不引入网络依赖——`makeLoopFactory` 导出化为此而生。③ `docker run` 必起面板的硬约束暴露了 PLAN Dockerfile 的 `CMD` 缺 `--web` bug——逐字抄计划不如对照 SPEC 验收标准（AC5）核一遍。④ `.gitlab-ci.yml` 早期已含 `unit-test`，PLAN 的"新增 job"指令已过期，surgical 原则下不改不增。
 
 ---
 
