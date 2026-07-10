@@ -400,3 +400,30 @@
   - **视觉重设计不破机制测试**：本次重写三件套 + 扩 1 测试，全量 40 tests 绿、构建成功——因为内核（AgentLoop/Guardrail/FeedbackClassifier/webServer 路由）零改动，UI 重构与机制测试正交。这是"观测/控制与内核解耦"（阶段 15 教训）的再次坐实：换皮不动骨。
 - **下一步**：推送 `feat/07-web-redesign` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待用户下达。
 
+---
+
+## 2026-07-10 · 阶段 17：feat/07-web-ui-polish — 前端界面打磨（声明移除 + 两栏顶端对齐 + 审批重定向交互收尾）
+
+- **触发的技能**：`frontend-design`（在已落地的 Anthropic 极简系统上做对齐与收尾，不另起炉灶）+ `using-git-worktrees`（前置清理 + 新隔离区）+ `subagent-driven-development`（单分支全生命周期）+ `verification-before-completion`（构建 + 全量测试）。
+- **task 编号**：PLAN 任务 16 的二次打磨（非新任务）。用户显式下达"分支 7：feat/07-web-ui-polish 彻底打磨前端"——四项要求：声明移除页脚 / 两栏对齐排版 / Claude 视觉风格 / 审批拒绝原因交互补全。
+- **关键 context 配置**：新 worktree `feat/07-web-ui-polish`，从已合并 redesign 的最新 `origin/main`（`619d94d` Merge feat/07-web-redesign）切出——故起步即两栏 Anthropic 暖色面板，本阶段在其上做对齐修复 + 交互收尾，而非从零。
+- **前置清理与同步（主目录运行）**：`git checkout main` + `git pull --ff-only origin main`（fast-forward 至 `619d94d`，拉入已合并的 redesign）→ `git worktree remove .claude/worktrees/feat+07-web-redesign --force`（redesign 已合并，安全清理）→ `git branch -D feat/07-web-redesign`（本地旧分支删除，远端 origin/feat/07-web-redesign 仍存）→ `git worktree list` 仅剩主仓。`.env` 经 `git check-ignore` 确认被 ignore（绝不打印/提交）。
+- **新 Worktree**：原生 `EnterWorktree(name="feat/07-web-ui-polish")` 建隔离区（`.claude/worktrees/feat+07-web-ui-polish`，base `origin/main`/fresh），其自动分支名经 sanitize 为 `worktree-feat+07-web-ui-polish`——随即 `git branch -m feat/07-web-ui-polish` 修正为用户要求的精确分支名（一次到位）。`npm ci`（309 包）后基线 `npm run build` OK + 全量 16 suites / 40 tests 绿。
+- **TDD 取舍**：本阶段为 UI 打磨，既有 `test/staticFrontend.test.ts` 的 2 测试（`/` serves index.html 含标题 + `/app.js` 含 `补充指示或拒绝原因`/`Deny`/`反馈`/`reason`）即是对前端机制的回归契约。我刻意**保留这些被测字符串**（placeholder 仍含 `补充指示或拒绝原因` 子串、Deny 按钮仍含 `Deny`/`反馈`、`decide()` 仍含 `reason`），改其周围而不破契约——故未新增/削弱测试，全量回归即足够。重构后两测试仍 PASS，40 tests 无回归。
+- **设计决策（frontend-design，在既有系统上做减法与对齐，非新设计）**：
+  - **主体未变**：仍是 Anthropic 极简暖色（paper `#f3f0ea` / card `#fff` / clay `#c96442` / serif+sans+mono）。本阶段不换皮，只修对齐与交互。
+  - **声明移除（要求①）**：删 `index.html` 的 `<footer class="footer">…轮询 1s · HTTP 非 WS · 单任务并发 · 移除 LLM 后内核仍可确定性单测</footer>` + `style.css` 的 `.footer` 规则——页面不再自陈轮询实现细节，留给 README/SPEC。
+  - **两栏顶端绝对对齐（要求②，本阶段核心修复）**：redesign 虽是两栏，但左 `.sidebar` 是卡片（`padding:26px 22px` + `align-self:start` + sticky），右 `.canvas` 却是**裸列**（首元素 `.rail-wrap` 无卡背景、padding 仅 2px）→ 左右首内容顶端不在同一 y、视觉错位。修复：把 `.canvas` 升为与 sidebar **同型卡片**（`background:var(--card)` + `box-shadow:var(--shadow-card)` + `padding:26px 22px` + `align-self:start`），两栏首内容（左 brand / 右 state-rail）顶端同 y 对齐；原内嵌 `.stream-wrap` 卡折叠进 `.canvas`（避免卡中卡），`.stream` 改 `flex:1 1 auto; min-height:0` 在卡内滚动；顶部 Loop State 轨道收入 `.canvas-head`（原 `.rail-wrap` 改名，加 `border-bottom:1px solid --hair-2` 发丝下分隔线），与左 sidebar 的 brand 行视觉同层。
+  - **审批拒绝交互补全（要求④，本阶段交互核心）**：redesign 已有原因输入框 + Deny 读 box 作 reason，但有两个真问题：(a) `renderApprovals` 每秒 `box.innerHTML=''` 全量重建→**用户打字中途被吞、焦点丢失**；(b) Deny 空原因仍发 `reason:''`→重定向信号为空，"人机对话重定向"落空。修复：(a) `renderApprovals` 改为**按 id 增量调和**——仅追加新出现的卡、移除已裁决的卡、保留仍在场卡的 `<textarea>` 文本与焦点（`box.querySelector('.approval-card[data-id="..."]')` 判存）；(b) Deny 点击时若 `reason.trim()` 为空→`card.classList.add('is-redirect')` + `input.focus()` + `.ap-hint` 显"请填写拒绝原因以回灌给 agent，引导其重定向修正" + `@keyframes nudge` 抖动，**不发送**；用户开始输入即解除 `is-redirect`（`input` 事件委托）。非空才 POST。把 HITL 从"二元裁决 + 可能空 reason"落成"强制带自然语言指示的拒绝重定向"。原因输入框由 `<input>` 升为 `<textarea rows=2>` 以容纳成句指示。
+  - **Claude 视觉风格（要求③）**：暖陶土 `#c96442` 主按钮、serif wordmark/eyebrow、纸面 `#f3f0ea`——均沿用 redesign 已落地系统，本阶段仅微调（`.canvas-head` 发丝线、textarea 行高、redirect 态 rose 描边）。
+- **验证（verification-before-completion）**：`npm run build` 成功（`dist/web/public/` 三件套随 `fs.cpSync` 拷入）；`npx jest` 全量 16 suites / 40 tests 全绿，无回归。
+- **凭据自查**：`git diff --cached | grep` 扫描无 `sk-`/`api_key=`/`password=` 真实凭据模式；`.env` 不在 worktree 且经 `git check-ignore` 确认被 ignore。
+- **commit hashes**：
+  - `0c29e57` — `feat(web): polish two-column alignment, remove footer, refine approval redirect`（实现：3 静态前端文件，+96 -58）
+  - docs commit — 本注记 + PLAN 任务 16 打磨注记 + 本日志阶段 17
+- **教训**：
+  - **轮询驱动的 DOM 重建是输入态杀手**：每秒 `innerHTML=''`+重建会吞掉用户正在输入的文本与焦点——这是任何"轮询渲染待办/审批列表"的通病。根治是按稳定 id 增量调和（diff by id，保留在场节点），而非全量重画。这条适用于一切轮询型面板。
+  - **"拒绝必须带原因"才是真重定向**：允许空 reason 的 Deny 对 agent 无指导意义、等于死值；强制非空 + 聚焦引导，把 HITL 从二元开关升为对话。机制（后端早接收 `dec.reason` 并回灌）未动，前端补的是"让这个信号真的有内容"。
+  - **对齐 = 同型卡片同 padding 同 align-self**：两栏视觉顶端对齐的工程做法是让两栏首元素处于同一 grid row 且 padding-top/box 一致，而非靠 margin 抠。把裸列升为同型卡片是最稳的修复。
+- **下一步**：推送 `feat/07-web-ui-polish` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待用户下达。
+
