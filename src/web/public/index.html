@@ -30,17 +30,32 @@
       </section>
 
       <section class="block">
-        <h2 class="eyebrow">凭据</h2>
+        <h2 class="eyebrow">凭据与端点</h2>
+        <p class="hint">API Key 经主密码加密（AES-256-GCM）落盘；请求地址与模型名非密，明文存于本地配置文件。</p>
         <label class="field">
           <span class="field-label">主密码</span>
           <input id="master" type="password" placeholder="解锁加密凭据">
         </label>
         <label class="field">
-          <span class="field-label">CLAUDE_API_KEY</span>
+          <span class="field-label">API_KEY</span>
           <input id="apikey" type="password" placeholder="永不回显，AES-256-GCM 落盘">
         </label>
         <button id="setkey" class="btn">保存 Key</button>
         <p class="keystatus" id="keystatus">key 状态：未知</p>
+
+        <hr class="sep">
+
+        <label class="field">
+          <span class="field-label">请求地址 (API_BASE_URL)</span>
+          <input id="baseurl" type="url" placeholder="https://api.openai.com/v1" autocomplete="off">
+        </label>
+        <label class="field">
+          <span class="field-label">请求模型 (MODEL)</span>
+          <input id="model" placeholder="gpt-4o-mini" autocomplete="off">
+        </label>
+        <p class="hint">使用 <strong>OpenAI 兼容格式</strong>端点（含 <code>/v1</code>），如 <code>https://api.openai.com/v1</code> 或 <code>https://dashscope.aliyuncs.com/compatible-mode/v1</code>；模型名按供应商填写。</p>
+        <button id="setcfg" class="btn">保存端点配置</button>
+        <p class="cfgstatus" id="cfgstatus">端点：未配置</p>
       </section>
     </aside>
 

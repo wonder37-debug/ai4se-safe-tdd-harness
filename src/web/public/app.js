@@ -202,6 +202,22 @@ async function renderKeyStatus() {
   } catch {}
 }
 
+// ───────── 端点配置（请求地址 / 模型名，非密，明文落盘） ─────────
+async function renderConfigStatus() {
+  try {
+    const c = await fetch('/api/config').then(r => r.json()) || {};
+    const el = $('cfgstatus');
+    const parts = [];
+    parts.push(c.baseUrl ? `地址 ${esc(c.baseUrl)}` : '地址未配置');
+    parts.push(c.model ? `模型 ${esc(c.model)}` : '模型未配置');
+    el.textContent = '端点：' + parts.join(' · ');
+    el.classList.toggle('is-present', !!(c.baseUrl || c.model));
+    // 回填到输入框，方便查看或微调（不覆盖用户正在编辑的内容）
+    if (c.baseUrl && !$('baseurl').value) $('baseurl').value = c.baseUrl;
+    if (c.model && !$('model').value) $('model').value = c.model;
+  } catch {}
+}
+
 // ───────── 轮询主循环 ─────────
 async function poll() {
   try {
@@ -235,6 +251,16 @@ $('setkey').onclick = () => {
     body: JSON.stringify({ key, masterPassword: master }),
   }).then(renderKeyStatus);
 };
+$('setcfg').onclick = () => {
+  const baseUrl = $('baseurl').value.trim();
+  const model = $('model').value.trim();
+  if (!baseUrl && !model) return;
+  fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ baseUrl, model }),
+  }).then(renderConfigStatus);
+};
 $('clearEvents').onclick = () => {
   const list = $('events');
   list.innerHTML = '<li class="event event--empty">已清空显示（事件仍在后端）。</li>';
@@ -243,6 +269,8 @@ $('clearEvents').onclick = () => {
 };
 
 renderKeyStatus();
+renderConfigStatus();
 renderState(null);
 setInterval(poll, 1000);
 setInterval(renderKeyStatus, 5000);
+setInterval(renderConfigStatus, 5000);

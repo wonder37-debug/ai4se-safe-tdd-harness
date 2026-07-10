@@ -481,3 +481,31 @@
   - **联调改动必须即时清理调试日志与 scratch**：前一轮"先让它跑通"留下的 `console.error` 与 scratch 文件，差点把明文 key 带进提交。联调期的临时日志/脚本应视为"待清理垃圾"，跑通即删，不跨轮遗留。
   - **改实现要回归既有单测**：`res.json()`→`res.text()` 这种"看着对"的改动直接打挂了既有 mock；改完跑一遍全量测试是最低门槛。防御式读取（两种 body API 都兼容）比硬切到 `.text()` 更稳。
   - **凭据安全是硬红线**：把 key echo 到 .bat 里"方便用户看"是典型的便利压倒安全——§3.1 不留口子。引导用户走 Web 面板/加密文件录入，绝不在脚本里留明文。
+
+---
+
+### 2026-07-10 · 阶段 20：Web 端点配置——前端可填请求地址/模型并写入文件（feat）
+
+- **背景**：原前端只有 API Key 输入（标签误写 `CLAUDE_API_KEY`），请求地址 / 模型名只能靠环境变量注入，用户无法在 Web 面板配置 LLM 端点。本轮让用户在页面填入后落盘到实际文件，供 loop 请求 LLM。
+- **Superpowers 技能**：`test-driven-development`（红→绿：configStore 与 /api/config 测试先行）、`karpathy-guidelines`（机制可单测：config 读取走 spy 钉死）。
+- **设计判定（§3.1 凭据安全）**：API Key 是凭据 → 仍走 `EncryptedFileStore`（AES-256-GCM，不变）；请求地址 / 模型名**非密** → 明文 JSON `~/.ai4se/config.json` 落盘（合规，§3.1 只要求 key 加密）。两者分离存储。
+- **新增**：
+  - `src/creds/configStore.ts`：`ConfigStore` 接口 + `JsonConfigStore`（get 缺失返回 {}、set 空值字段不写入、clear）。
+  - `test/configStore.test.ts`：5 用例（红：模块不存在→TS2307；实现后转绿）。
+- **接线（既有接口变更，TDD 更新 fixture）**：
+  - `src/index.ts`：`LoopFactoryOpts += config`；`makeLoopFactory` 读 `config.get()` 取 baseUrl/model，**config 优先、env 回退**（Docker/CI 仍可注入 env）；`main()` 创建 `~/.ai4se/config.json`。
+  - `src/web/webServer.ts`：`WebServerOpts += config`；新增 `GET/POST /api/config`（非密，可回显供前端回填）。
+  - `test/webEntry.test.ts`：fixture 加 config；新增 spy 用例——`SpyConfig` 断言 `get()` 被调用（证明 config 被读取而非只看 env，离线可测，不触网）。
+  - `test/webServer.test.ts`：4 个 /api/config 用例（初始空、写入回显、部分字段）；boot() fixture 加 config。
+  - `test/staticFrontend.test.ts`：断言 index.html 含 `API_KEY`（非 `CLAUDE_API_KEY`）、`id="baseurl"`/`id="model"`、`OpenAI` 提示。
+- **前端**：
+  - `index.html`：`CLAUDE_API_KEY` → `API_KEY`；加「请求地址 (API_BASE_URL)」「请求模型 (MODEL)」输入框 + `<hr class="sep">` 分隔 + 「保存端点配置」按钮 + OpenAI 兼容格式提示（含 `/v1`，举 OpenAI 与百炼两例）。
+  - `app.js`：`renderConfigStatus()`（GET /api/config 回填输入框、显示状态）+ `setcfg` onclick（POST）+ 5s 轮询。
+  - `style.css`：`.sep` 暖色发丝分隔线、`.cfgstatus` 与 `.keystatus` 同型（mint 态）。
+- **验证**：`npm run build` 通过；`npm test` 21 suites / 64 passed + 1 skipped；端到端实测 `node dist/index.js --web`：GET /api/config 初始 `{}`、POST 写入回显、部分字段更新、index.html 含新字段与 OpenAI 提示。手测写入的示例 config.json 已清理（不影响用户原 qwen env 回退配置）。
+- **未触网说明**：config 正向"地址→真实 LLM 调用"路径触网，离线只测护栏（缺 config+env → provider_error）与"config 被读取"的 spy 断言；正向路径由 skip 守卫的 real-llm 集成测试覆盖——延续 §A.4-C"测得了的测，测不到的真网络至少测护栏"折中。
+- **教训**：
+  - **凭据 vs 配置要分库**：把请求地址也塞进加密 store 会要求主密码才能读非密数据，过度；按"是否含 secret"分库（key→加密、端点→明文）更合 §3.1 本意。
+  - **接口变更时 fixture 同步是 TDD 的一部分**：`LoopFactoryOpts`/`WebServerOpts` 加字段后，三个既有测试的 boot/factory fixture 必须同步更新，否则 TS 编译即红——这本身是合理的"接口契约"红门。
+  - **手测要清理自己写的真实配置**：端到端用真实 `~/.ai4se/config.json` 测，会覆盖用户原 env 回退配置；测完即删，避免把示例值留给用户。
+- **commit**：见本条提交 `feat(web): configurable LLM endpoint (baseUrl/model) via web panel`。

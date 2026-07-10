@@ -178,6 +178,22 @@ textarea:focus, input:focus {
 }
 .keystatus.is-present { color: var(--mint); }
 
+/* 凭据与端点两组之间的细分隔线 */
+.sep {
+  border: none;
+  border-top: 1px solid var(--hair-2);
+  margin: 4px 0 2px;
+}
+
+/* 端点配置状态：与 keystatus 同型 */
+.cfgstatus {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+.cfgstatus.is-present { color: var(--mint); }
+
 /* ───────── 右侧主舞台：与左侧控制栏同型卡片，顶端绝对对齐 ───────── */
 .canvas {
   background: var(--card);

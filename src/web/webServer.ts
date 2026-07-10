@@ -4,6 +4,7 @@ import * as path from 'path';
 import { EventStore } from '../loop/eventSink';
 import { HttpApprovalGateway } from '../approval/httpApprovalGateway';
 import { CredentialStore } from '../creds/credentialStore';
+import { ConfigStore } from '../creds/configStore';
 
 const PUB = path.join(__dirname, 'public');
 
@@ -12,6 +13,7 @@ export interface WebServerOpts {
   eventStore: EventStore;
   approval: HttpApprovalGateway;
   creds: CredentialStore;
+  config: ConfigStore;
   loopFactory: (task: string, cwd: string) => Promise<{ haltReason: string; iterations: number }>;
 }
 
@@ -27,6 +29,13 @@ export async function startWebServer(opts: WebServerOpts): Promise<{ server: htt
         res.end(JSON.stringify(opts.eventStore.since(since)));
       } else if (req.method === 'GET' && url.pathname === '/api/key/status') {
         res.end(JSON.stringify(opts.creds.status()));
+      } else if (req.method === 'GET' && url.pathname === '/api/config') {
+        // 请求地址 / 模型名非密，可回显供前端回填
+        res.end(JSON.stringify(await opts.config.get()));
+      } else if (req.method === 'POST' && url.pathname === '/api/config') {
+        const b = await body(req);
+        await opts.config.set({ baseUrl: b.baseUrl, model: b.model });
+        res.end(JSON.stringify(await opts.config.get()));
       } else if (req.method === 'GET' && url.pathname === '/api/approvals') {
         res.end(JSON.stringify(opts.approval.pending()));
       } else if (req.method === 'POST' && url.pathname === '/api/key') {

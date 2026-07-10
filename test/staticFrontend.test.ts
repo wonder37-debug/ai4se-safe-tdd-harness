@@ -3,6 +3,7 @@ import { startWebServer } from '../src/web/webServer';
 import { EventStore } from '../src/loop/eventSink';
 import { HttpApprovalGateway } from '../src/approval/httpApprovalGateway';
 import { EncryptedFileStore } from '../src/creds/credentialStore';
+import { JsonConfigStore } from '../src/creds/configStore';
 import * as os from 'os'; import * as fs from 'fs/promises'; import * as path from 'path';
 
 // 始终 resolve 的 GET 采集器：断言失败也不会让 'end' 回调挂起（避免 RED 态句柄残留）
@@ -22,6 +23,7 @@ async function boot() {
   const srv = await startWebServer({
     port: 0, eventStore: new EventStore(), approval: new HttpApprovalGateway(),
     creds: new EncryptedFileStore(path.join(dir, 'c.enc')),
+    config: new JsonConfigStore(path.join(dir, 'config.json')),
     loopFactory: async () => ({ haltReason: 'finish', iterations: 0 }),
   });
   return { srv, port: (srv.server.address() as any).port };
@@ -48,5 +50,21 @@ test('redesign: approval reason input + Deny & 反馈 served via /app.js', async
     expect(body).toContain('反馈');
     // 拒绝时把输入框内容作为 reason 发送给后端（对话重定向）
     expect(body).toContain('reason');
+  } finally { srv.server.close(); }
+});
+
+test('端点配置：index.html 含 API_KEY 标签与 baseurl/model 输入框', async () => {
+  const { srv, port } = await boot();
+  try {
+    const { status, body } = await get(port, '/');
+    expect(status).toBe(200);
+    // 标签由 CLAUDE_API_KEY 改为 API_KEY
+    expect(body).not.toContain('CLAUDE_API_KEY');
+    expect(body).toContain('API_KEY');
+    // 新增请求地址 / 模型输入框
+    expect(body).toContain('id="baseurl"');
+    expect(body).toContain('id="model"');
+    // 提示使用 OpenAI 兼容格式
+    expect(body).toContain('OpenAI');
   } finally { srv.server.close(); }
 });
