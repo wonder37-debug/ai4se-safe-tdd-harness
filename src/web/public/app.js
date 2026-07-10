@@ -218,11 +218,12 @@ async function poll() {
 
 // ───────── 用户动作 ─────────
 $('start').onclick = () => {
-  if (!$('#task').value.trim()) return;
+  // 任务框留空时给一个默认演示任务，避免空点击静默无反馈——离线降级下也能直接看到自修正闭环
+  const task = $('#task').value.trim() || 'implement add(a,b) returning the sum, verified by Jest';
   fetch('/api/task', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task: $('#task').value, cwd: $('#cwd').value }),
+    body: JSON.stringify({ task, cwd: $('#cwd').value }),
   });
 };
 $('setkey').onclick = () => {
