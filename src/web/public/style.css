@@ -178,21 +178,27 @@ textarea:focus, input:focus {
 }
 .keystatus.is-present { color: var(--mint); }
 
-/* ───────── 右侧主画板 ───────── */
+/* ───────── 右侧主舞台：与左侧控制栏同型卡片，顶端绝对对齐 ───────── */
 .canvas {
+  background: var(--card);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  padding: 26px 22px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   min-width: 0;
+  align-self: start;
 }
 
 /* 顶部纤细 Loop State 轨道：以字重 + 淡化映射当前状态 */
-.rail-wrap {
+.canvas-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 2px 4px;
+  padding: 0 2px 2px;
+  border-bottom: 1px solid var(--hair-2);
 }
 .state-rail {
   display: flex;
@@ -295,10 +301,33 @@ textarea:focus, input:focus {
   border-radius: var(--r-sm);
   padding: 9px 11px;
   outline: none;
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.5;
   transition: border-color .2s, box-shadow .2s;
 }
 .ap-input::placeholder { color: var(--muted-2); }
 .ap-input:focus { border-color: var(--clay-soft); box-shadow: 0 0 0 3px rgba(201, 100, 66, 0.10); }
+/* Deny 未填原因时的人机重定向引导态：聚焦输入框并提示 */
+.approval-card.is-redirect .ap-input {
+  border-color: var(--rose);
+  box-shadow: 0 0 0 3px rgba(168, 66, 58, 0.12);
+  animation: nudge .32s ease;
+}
+@keyframes nudge {
+  0%, 100% { transform: none; }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+.ap-hint {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--rose);
+  min-height: 0;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.approval-card.is-redirect .ap-hint { opacity: 1; }
 .ac-actions { display: flex; gap: 9px; }
 .ac-actions .btn--approve { color: #fff; background: var(--mint); border-color: var(--mint); font-weight: 500; }
 .ac-actions .btn--approve:hover { background: #547a5e; }
@@ -306,18 +335,12 @@ textarea:focus, input:focus {
 .ac-actions .btn--deny:hover { background: #933730; }
 
 /* ───────── 自然语言事件流 ───────── */
-.stream-wrap {
-  background: var(--card);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-card);
-  padding: 18px 20px 16px;
+.stream-head {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  flex: 1;
-  min-height: 0;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
 }
-.stream-head { display: flex; align-items: center; justify-content: space-between; }
 
 .stream {
   list-style: none;
@@ -327,7 +350,9 @@ textarea:focus, input:focus {
   flex-direction: column;
   gap: 8px;
   overflow: auto;
-  max-height: 64vh;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 62vh;
   scrollbar-width: thin;
   scrollbar-color: var(--hair) transparent;
 }
@@ -386,14 +411,6 @@ textarea:focus, input:focus {
 @media (prefers-reduced-motion: reduce) {
   .event, .approval-card { animation: none; }
   * { transition: none !important; }
-}
-
-/* ───────── 页脚 ───────── */
-.footer {
-  font-size: 0.72rem;
-  color: var(--muted-2);
-  text-align: center;
-  padding-top: 2px;
 }
 
 :focus-visible { outline: 2px solid var(--clay); outline-offset: 2px; }

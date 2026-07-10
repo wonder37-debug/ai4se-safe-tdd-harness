@@ -44,10 +44,10 @@
       </section>
     </aside>
 
-    <!-- ───────── 右侧主画板 ───────── -->
-    <main class="canvas">
+    <!-- ───────── 右侧主舞台（与左侧控制栏同型卡片，顶端绝对对齐） ───────── -->
+    <main class="canvas" aria-label="主舞台">
       <!-- 顶部纤细的 Loop State 轨道：用字重与淡化映射当前状态 -->
-      <div class="rail-wrap">
+      <div class="canvas-head">
         <ol class="state-rail" id="stateRail" aria-label="loop state">
           <li data-state="RUNNING"><span class="dot"></span>RUNNING</li>
           <li data-state="APPROVAL_PENDING"><span class="dot"></span>PENDING</li>
@@ -61,19 +61,13 @@
       <section class="approvals" id="approvals" aria-live="polite"></section>
 
       <!-- 自然语言事件流 -->
-      <section class="stream-wrap">
-        <header class="stream-head">
-          <h2 class="eyebrow">事件流</h2>
-          <button id="clearEvents" class="btn btn--ghost">清空</button>
-        </header>
-        <ol class="stream" id="events" aria-live="polite">
-          <li class="event event--empty">等待事件……提交任务后，这里会以自然语言实时流出 agent 的每一步。</li>
-        </ol>
-      </section>
-
-      <footer class="footer">
-        轮询 1s · HTTP 非 WS · 单任务并发 · 移除 LLM 后内核仍可确定性单测
-      </footer>
+      <div class="stream-head">
+        <h2 class="eyebrow">事件流</h2>
+        <button id="clearEvents" class="btn btn--ghost">清空</button>
+      </div>
+      <ol class="stream" id="events" aria-live="polite">
+        <li class="event event--empty">等待事件……提交任务后，这里会以自然语言实时流出 agent 的每一步。</li>
+      </ol>
     </main>
   </div>
 
