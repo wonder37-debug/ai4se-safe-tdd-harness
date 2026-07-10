@@ -427,3 +427,31 @@
   - **对齐 = 同型卡片同 padding 同 align-self**：两栏视觉顶端对齐的工程做法是让两栏首元素处于同一 grid row 且 padding-top/box 一致，而非靠 margin 抠。把裸列升为同型卡片是最稳的修复。
 - **下一步**：推送 `feat/07-web-ui-polish` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待用户下达。
 
+
+---
+
+## 2026-07-10 · 阶段 18：feat/08-demo-delivery — 最终交付（任务 17 机制演示 + 任务 18 Dockerfile/CI/README/真实 --web 入口）
+
+- **触发的技能**：`karpathy-guidelines`（先想后写、最简实现、surgical、目标驱动可验证）+ `ponytail`（最短路径、不投机、非平凡逻辑留一个可运行检查）+ `using-git-worktrees`（前置清理 + 新隔离区）+ `verification-before-completion`（全量测试 + 构建 + --web 实测）。
+- **task 编号**：PLAN 任务 17（§A.6 三幕演示）+ 任务 18（Dockerfile + CI + README + 真实 --web 入口）——PLAN 最后两任务，全 18 任务至此收口。
+- **关键 context 配置**：新 worktree `feat/08-demo-delivery`，从已合并 web-polish 的最新 `origin/main`（`f2d308d` Merge feat/07-web-ui-polish）切出。前置在主目录：`git checkout main` + `git pull --ff-only`（fast-forward `619d94d→f2d308d`，拉入 polish 的两 commit）→ `ExitWorktree(remove)` 清掉已合并的 `feat+07-web-ui-polish` worktree → `git branch -D feat/07-web-ui-polish` 删本地旧分支 → `git worktree list` 仅剩主仓。`.env` 经 `git check-ignore` 确认被 ignore。
+- **新 Worktree**：`EnterWorktree(name="feat/08-demo-delivery")` 建隔离区，自动分支名 sanitize 为 `worktree-feat+08-demo-delivery`——随即 `git branch -m feat/08-demo-delivery` 修正。
+- **任务 17（TDD：红=无测试→绿=4 测试）**：`demo/mechanism-demo.test.ts` 逐字落地 §A.6 三幕：①护栏拦截 `rm -rf /` + MockApprovalGateway deny 回灌 ②注入 Jest 断言失败 fixture → FeedbackClassifier 回灌 → ScriptedMock 下一轮 `write_file` 修正 → 循环走到绿（断言 `add(2,3)===5`）③`r""m -rf /` 混淆绕过仍 high + `rm a.txt` low + `ls` none + 连续两轮同断言点 `HALTED(stuck)`。演示即装配既有内核模块（无新实现）；red 门诚实定为"`npm run demo` 此前在 `demo/` 下无 `.test.ts`→'No tests found' exit 1"，写后转 4 绿。**commit `ef284a9`**。
+- **任务 18（TDD：红=Dockerfile 缺失+makeLoopFactory 未导出→绿）**：
+  - **先写两测试作红**：`test/ci.test.ts`（契约：`.gitlab-ci.yml` 含 `unit-test:` job + Dockerfile 多阶段 `FROM node:20` ≥2）+ `test/webEntry.test.ts`（离线 TDD 守 `makeLoopFactory` 三条不触网安全分支：缺 MASTER_PASSWORD / 缺 API_BASE_URL / 凭据不可解 → 均 `provider_error`）。运行：ci 的 Dockerfile 测试 ENOENT + webEntry `TS2305 makeLoopFactory 未导出` → 红。
+  - **Dockerfile**：多阶段（`node:20-bookworm-slim` build→prod），**`CMD ["node","dist/index.js","--web"]`**——PLAN 原稿 `CMD ["node","dist/index.js"]` 仅打印 usage 即退，违反 SPEC §7.2/AC5 "docker run 必须能起 web 面板"，对照验收标准核出并作根因修正。
+  - **src/index.ts**：由 greet-only 桩重写为真实 `--web` 命令行入口。导出 `makeLoopFactory({creds,approval,eventStore})`：解析 `MASTER_PASSWORD` + AES-256-GCM 加密凭据 → 装配真实 `AgentLoop`（`OpenAICompatProvider`）。任务经 **`systemPrompt` 注入**，不改 `AgentLoop` 构造签名（既有 12/17 测试零回归）；缺主密码/缺 `API_BASE_URL`/凭据不可解三条短路返回 `provider_error` 且**不触网**（happy path 才构造 provider）。`greet` 保留以守 smoke 契约；`main()` 以 `require.main===module` 守卫避免测试期触发。
+  - **`.gitlab-ci.yml` 不改**：早期已含 `unit-test:` job（image+stages+script npm ci && npm test），surgical 原则下不画蛇添足；PLAN 的"新增 job"指令已过期。
+  - **README.md**：整替换 GitLab 模板，含功能概览/获取/运行(Docker+本地)/凭据安全配置指南（SPEC §4.2 威胁模型表 + 5 条操作要点）/架构数据流/已知限制/CI。
+  - 运行两测试转绿；全量 19 suites/49 tests + demo 4 + build 成功；`node dist/index.js --web` 实测 `/api/health`→`{"ok":true}`、`/api/key/status`→`{present:false,source:"encrypted-file"}`（不回显 key）、`/`→index.html。**commit `d3ffa46`**。
+- **凭据自查**：每次提交前 `git status`+`git check-ignore .env`+`grep sk-/api_key=/password=` 扫描，无真实凭据；`.env` 不在 worktree。
+- **commit hashes**：
+  - `ef284a9` — `feat(demo): §A.6 three-act mechanism demo`
+  - `d3ffa46` — `feat(dist): Dockerfile, CI contract test, README, real --web entry`
+  - docs commit — PLAN 任务 17/18 勾选 + Commit Hash + 交付注记 + 本日志阶段 18
+- **教训**：
+  - **TDD 红门要诚实，尤其"装配既有绿模块"类任务**：演示测试本身引用的全是已绿模块，无自然红；诚实把 red 门定为"命令找不到测试"（`No tests found`），而非伪称某断言失败。karpathy #4"可验证目标"要求红门可观察，"0 测试→4 测试"即合法红→绿。
+  - **产品胶水（--web 接线）默认无单测，但可把安全分支抽成离线单测**：`loopFactory` happy path 触网不可单测，但"缺凭据即短路、不触网、不崩"三条安全分支可离线钉死——把 `makeLoopFactory` 导出化为此而生。这是 ponytail"非平凡逻辑留一个可运行检查"与 TDD 的折中：测得了的测，测不到的（真网络）至少测它的护栏。
+  - **逐字抄 PLAN 不如对照 SPEC 验收标准核一遍**：PLAN Dockerfile 的 `CMD` 缺 `--web` 是潜在 bug——靠 SPEC §7.2/AC5"docker run 必起面板"的验收标准才核出。计划是活文档，交付时以验收标准为终审。
+  - **既有能力已就位时不增不改**：`.gitlab-ci.yml` 早期已含 `unit-test`，PLAN"新增 job"指令过期——ponytail/surgical 下确认现状满足即止，不为"对齐 PLAN 文字"而改。
+- **下一步**：推送 `feat/08-demo-delivery` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR。PLAN 全 18 任务收口——后续若用户下达，可做最终交付复核/演示录制等，但无既定 PLAN 任务待办。
