@@ -1956,6 +1956,8 @@ git commit -m "feat(web): static 3-panel frontend"
 
 > **深度 UI 重设计（feat/07-web-redesign, 实现 `bdc5a8e` + docs `docs: log web redesign phase`）**：在 feat/07-web-panel 之上做深度 UI 重构，全面采用 Anthropic 官网极简风格——珍珠白/暖灰纸面（`#f3f0ea`）+ 纯白卡片大圆角 + 极致柔和微阴影；serif display + sans body + mono data 混搭；"左控制栏 + 右主画板"两栏；纤细 Loop State 轨道（字重/淡化映射当前状态）；底层 JSON 翻译为自然语言气泡；测试失败 Feedback 渲染为卡其色 Blockquote（醒目提示断言行号 `file:line`），成功用极简绿底细线卡；人工审批卡含原因输入框（`placeholder="补充指示或拒绝原因…"`）+ `[Approve]`/`[Deny & 反馈]`，拒绝时把输入框内容作为 `reason` 回灌实现对话重定向。`test/staticFrontend.test.ts` 扩展为 2 测试（新增 `/app.js` 审批输入框 + Deny&反馈 断言，且改为始终 resolve 的 GET 采集器消除 RED 态挂起），全量 16 suites / 40 tests 绿，`npm run build` 成功。
 
+> **前端打磨（feat/07-web-ui-polish, 实现 `0c29e57` + docs）**：在 redesign 基础上做对齐与交互收尾。① **声明移除**：删去底部"轮询 1s · HTTP 非 WS · 单任务并发…"页脚（`index.html` 的 `.footer` + `style.css` 的 `.footer` 规则）。② **两栏顶端绝对对齐**：把右主舞台 `.canvas` 由裸列升为与左侧 `.sidebar` 同型卡片（`background:var(--card)` + `--shadow-card` + `padding:26px 22px` + `align-self:start`），两栏首内容顶端在同一 y；原 `.stream-wrap` 卡折叠进 `.canvas`，`.stream` 改 `flex:1 1 auto; min-height:0` 内部滚动；顶部 Loop State 轨道收入 `.canvas-head` 加发丝下分隔线。③ **审批拒绝交互补全**：`renderApprovals` 改为按 id 增量调和（仅追加新卡、移除已裁决卡），修复每秒重建吞掉输入文本/焦点的 bug；原因输入框由 `<input>` 升为 `<textarea rows=2>`；Deny 仍动态读取框内文本作 `reason`（不硬编码 `'browser'`），为空时聚焦 + `.is-redirect` nudge 动画 + `.ap-hint` 引导"请填写拒绝原因以回灌给 agent"，不发送——把 HITL 从二元裁决落成真实人机对话重定向。Claude 暖色风格（pearl paper / clay / serif）保持。全量 16 suites / 40 tests 绿，`npm run build` 成功。
+
 ---
 
 ## 任务 17：机制演示（§A.6 三幕）

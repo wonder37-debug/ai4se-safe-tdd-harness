@@ -121,40 +121,67 @@ function appendEvents(events) {
 }
 
 // ───────── 人工审批流：原因输入框 + Deny & 反馈 ─────────
+function buildApprovalCard(a) {
+  const card = document.createElement('article');
+  card.className = 'approval-card';
+  card.dataset.id = a.id;
+  const cmd = a.action?.args?.command ?? JSON.stringify(a.action?.args ?? {});
+  card.innerHTML =
+    `<div class="ac-head"><span class="ac-tool">${esc(a.action?.tool ?? '?')}</span><span class="ac-sev">高危</span></div>` +
+    `<pre class="ac-cmd">${esc(String(cmd))}</pre>` +
+    (a.reasons?.length ? `<div class="ac-reasons">${esc(a.reasons.join(' · '))}</div>` : '') +
+    // 人工审批卡片内的文本输入框：补充指示或拒绝原因
+    `<textarea class="ap-input" rows="2" placeholder="补充指示或拒绝原因，将回灌给 agent…"></textarea>` +
+    `<p class="ap-hint">请填写拒绝原因以回灌给 agent，引导其重定向修正。</p>` +
+    `<div class="ac-actions">` +
+      `<button class="btn btn--approve" data-d="approve">批准</button>` +
+      // 拒绝时把输入框内容作为 reason 发送，实现对 Agent 的对话重定向
+      `<button class="btn btn--deny" data-d="deny">Deny &amp; 反馈</button>` +
+    `</div>`;
+  return card;
+}
+
+// 按 id 增量调和：仅追加新卡片、移除已裁决的卡片，保留仍在场卡片的输入文本与焦点
 async function renderApprovals() {
   const ap = await fetch('/api/approvals').then(r => r.json()).catch(() => []);
   const box = $('approvals');
+  const pendingIds = new Set(ap.map(a => a.id));
+  for (const card of [...box.querySelectorAll('.approval-card')]) {
+    if (!pendingIds.has(card.dataset.id)) card.remove();
+  }
   if (!ap.length) {
-    box.innerHTML = '<p class="approval--empty">当前无待审批请求。</p>';
+    if (!box.querySelector('.approval--empty')) {
+      box.innerHTML = '<p class="approval--empty">当前无待审批请求。</p>';
+    }
     return;
   }
-  box.innerHTML = '';
+  const empty = box.querySelector('.approval--empty');
+  if (empty) empty.remove();
   for (const a of ap) {
-    const card = document.createElement('article');
-    card.className = 'approval-card';
-    const cmd = a.action?.args?.command ?? JSON.stringify(a.action?.args ?? {});
-    card.innerHTML =
-      `<div class="ac-head"><span class="ac-tool">${esc(a.action?.tool ?? '?')}</span><span class="ac-sev">高危</span></div>` +
-      `<pre class="ac-cmd">${esc(String(cmd))}</pre>` +
-      (a.reasons?.length ? `<div class="ac-reasons">${esc(a.reasons.join(' · '))}</div>` : '') +
-      // 人工审批卡片内的文本输入框：补充指示或拒绝原因
-      `<input class="ap-input" placeholder="补充指示或拒绝原因…" />` +
-      `<div class="ac-actions">` +
-        `<button class="btn btn--approve" data-id="${esc(a.id)}" data-d="approve">Approve</button>` +
-        // 拒绝时把输入框内容作为 reason 发送，实现对 Agent 的对话重定向
-        `<button class="btn btn--deny" data-id="${esc(a.id)}" data-d="deny">Deny &amp; 反馈</button>` +
-      `</div>`;
-    box.appendChild(card);
+    if (box.querySelector(`.approval-card[data-id="${a.id}"]`)) continue;
+    box.appendChild(buildApprovalCard(a));
   }
 }
 
 $('approvals').addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-id]');
+  const b = e.target.closest('button[data-d]');
   if (!b) return;
   const card = b.closest('.approval-card');
   const input = card?.querySelector('.ap-input');
   const reason = input ? input.value : '';
-  decide(b.dataset.id, b.dataset.d, reason);
+  // 拒绝时必须动态读取框内文本作为 reason；为空则聚焦引导人机对话重定向，不发送
+  if (b.dataset.d === 'deny' && !reason.trim()) {
+    card.classList.add('is-redirect');
+    input?.focus();
+    return;
+  }
+  card.classList.remove('is-redirect');
+  decide(card.dataset.id, b.dataset.d, reason);
+});
+// 用户开始输入即解除重定向引导态
+$('approvals').addEventListener('input', (e) => {
+  if (!e.target.matches('.ap-input')) return;
+  e.target.closest('.approval-card')?.classList.remove('is-redirect');
 });
 
 function decide(id, d, reason) {
