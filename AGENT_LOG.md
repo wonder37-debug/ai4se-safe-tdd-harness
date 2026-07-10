@@ -509,3 +509,27 @@
   - **接口变更时 fixture 同步是 TDD 的一部分**：`LoopFactoryOpts`/`WebServerOpts` 加字段后，三个既有测试的 boot/factory fixture 必须同步更新，否则 TS 编译即红——这本身是合理的"接口契约"红门。
   - **手测要清理自己写的真实配置**：端到端用真实 `~/.ai4se/config.json` 测，会覆盖用户原 env 回退配置；测完即删，避免把示例值留给用户。
 - **commit**：见本条提交 `feat(web): configurable LLM endpoint (baseUrl/model) via web panel`。
+
+---
+
+### 2026-07-10 · 阶段 21：Web 反馈/平台感知/favicon/双halt（feat + fix）
+
+- **背景**：用户实测反馈——① 点击按钮无可见反馈；② 浏览器 console 报 `favicon.ico 404`；③ LLM 在 Windows 上先 `rm add.test.js` 失败（"'rm' 不是内部或外部命令"）再 `del` 才成；④ 事件流出现 `#6 #7` 两条 `循环结束 · finish`（双 halt）。
+- **Superpowers 技能**：`test-driven-development`（红→绿）、`systematic-debugging`（三个症状各自的根因定位）。
+- **修 1 · 平台感知 prompt**（根因：systemPrompt 未告知 OS，LLM 凭猜测用 Unix 命令）：
+  - 抽出纯函数 `buildSystemPrompt(task, platform)`（`src/index.ts`），在 prompt 注入 `Platform: <platform> (<osName>)` + 平台原生命令提示（Windows → `del`/`Remove-Item`/`dir`/`type` 而非 `rm`/`ls`/`cat`；Unix → 反之）。
+  - 这是 context engineering（任务上下文），非"机制"——护栏/反馈仍是代码，符合 §A.4-B。
+  - `test/systemPrompt.test.ts` 4 用例（红：函数未导出→TS2305；绿后含任务文本/action 格式/platform/win32 提示 del+Remove-Item+`not rm`、Unix 提示 rm+ls）。
+- **修 2 · favicon 404**：`src/web/webServer.ts` 加 `GET /favicon.ico → 204 No Content`（消除浏览器自动请求的 404 噪声）。webServer.test 断言 204（红 404→绿）。
+- **修 3 · 双 halt**：原 `/api/task` handler 无条件 `.then(r => emit halt)`，与 AgentLoop 自身 emit 叠加致 `#6 #7` 双条。改为**仅 `provider_error` 才补 emit**（短路未走内核的情况），正常 finish/cap/stuck 内核已 emit 不再重复；并把 provider_error 的 halt payload 对齐为 `{reason:'provider_error', iterations}`（与内核 halt 形态一致）。webServer.test 两条用例（finish→0 halt；provider_error→1 halt 且 payload.reason 正确）。
+- **修 4 · 前端点击反馈**（用户主诉求）：
+  - `src/web/public/app.js`：新增 `flash(btn, ok, msg)`（按钮短暂变 ✓ 绿/✗ 红、临时禁用防重复点、1.6s 还原）+ `postWithFeedback(btn,url,payload,onSuccess,okMsg)`（统一 try/catch，HTTP 非 2xx 也算失败）。接线 `start`/`setkey`/`setcfg`/`clearEvents`/`decide`（审批按钮）；空输入等校验失败也 `flash(fail)`。
+  - `src/web/public/style.css`：`.btn.is-flash-ok`（mint）/`.is-flash-fail`（rose）/`.btn:disabled`。
+  - `test/staticFrontend.test.ts`：断言 app.js 含 `flash`/`postWithFeedback`/`is-flash-ok`/`is-flash-fail`。
+- **未做的根因（记录）**：`rm` 失败时 stderr 中文以 cp936 编码、前端按 UTF-8 渲染致乱码（"'rm' 不是内部..." 显示为 mojibake）。本轮用平台感知 prompt 从源头避免 `rm`，乱码随之消失；若将来命令仍以中文报错，需在 `run_shell`/`run_tests` 按 `process.platform==='win32'` 用 iconv 或 `Buffer`+cp936 解码 stderr——本轮不引入新依赖，留作未决项。
+- **验证**：`npm run build` 通过；`npm test` 22 suites / 71 passed + 1 skipped；端到端实测 `node dist/index.js --web`：`buildSystemPrompt('win32')` 含 del/Remove-Item/`not rm`/win32，`GET /favicon.ico` 返回 204，app.js 含 flash/postWithFeedback/反馈样式类。手测 config.json 已清理。
+- **教训**：
+  - **平台信息是 system prompt 的必备上下文**：coding agent 不知 OS 就会凭默认（Unix）发命令，Windows 上 `rm` 必败——这是 Claude Code 自身也在 prompt 注入 platform 的同样道理。把 prompt 构建抽成纯函数便于单测，避免"prompt 改动不可验证"。
+  - **"无反馈"是可用性硬伤**：按钮点击无可见响应，用户无法判断成功/失败——`flash` 这种轻量按钮态反馈比 toast 更贴合极简风格、且零依赖。
+  - **双 halt 是"保险 emit"过度**：web handler 怕漏 emit 就无条件补，与内核 emit 叠加。正确做法是只补"内核未覆盖的分支"（provider_error 短路），而非全量补——"兜底"要兜在真正缺口上，否则制造重复噪声。
+- **commit**：见本条提交 `feat+fix: web click feedback, platform-aware prompt, favicon 204, no double halt`。

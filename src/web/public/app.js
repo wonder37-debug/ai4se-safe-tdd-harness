@@ -11,6 +11,39 @@ function esc(s) {
 }
 function truncate(s, n) { s = String(s); return s.length > n ? s.slice(0, n) + '…' : s; }
 
+// 点击反馈：按钮短暂变为 ✓ 成功 / ✗ 失败，让用户明确知道点击结果。
+// ok=true 绿色、ok=false 红色；约 1.6s 后还原按钮文案与状态。
+function flash(btn, ok, msg) {
+  if (!btn) return;
+  if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+  btn.textContent = (ok ? '✓ ' : '✗ ') + (msg || (ok ? '成功' : '失败'));
+  btn.classList.remove('is-flash-ok', 'is-flash-fail');
+  btn.classList.add(ok ? 'is-flash-ok' : 'is-flash-fail');
+  btn.disabled = true;
+  clearTimeout(btn._flashT);
+  btn._flashT = setTimeout(() => {
+    btn.textContent = btn.dataset.label;
+    btn.classList.remove('is-flash-ok', 'is-flash-fail');
+    btn.disabled = false;
+  }, 1600);
+}
+
+// POST 后统一处理：成功 flash ok + onSuccess，失败 flash fail
+async function postWithFeedback(btn, url, payload, onSuccess, okMsg) {
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    flash(btn, true, okMsg || '成功');
+    if (onSuccess) await onSuccess(r);
+  } catch (e) {
+    flash(btn, false, '失败');
+  }
+}
+
 // ───────── Loop State 派生（从最新事件流，不侵入内核） ─────────
 function deriveState(events) {
   if (!events.length) return null;
@@ -185,11 +218,11 @@ $('approvals').addEventListener('input', (e) => {
 });
 
 function decide(id, d, reason) {
-  fetch('/api/approval', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, decision: d, reason: reason || '' }),
-  }).then(renderApprovals);
+  // 审批按钮反馈：点击即知结果
+  const card = document.querySelector(`.approval-card[data-id="${id}"]`);
+  const btn = card?.querySelector(`button[data-d="${d}"]`);
+  postWithFeedback(btn, '/api/approval', { id, decision: d, reason: reason || '' }, renderApprovals,
+    d === 'approve' ? '已批准' : '已拒绝');
 }
 
 // ───────── 凭据状态 ─────────
@@ -234,38 +267,27 @@ async function poll() {
 
 // ───────── 用户动作 ─────────
 $('start').onclick = () => {
-  if (!$('task').value.trim()) return;
-  fetch('/api/task', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task: $('task').value, cwd: $('cwd').value }),
-  });
+  if (!$('task').value.trim()) { flash($('start'), false, '任务为空'); return; }
+  postWithFeedback($('start'), '/api/task', { task: $('task').value, cwd: $('cwd').value }, null, '已提交');
 };
 $('setkey').onclick = () => {
   const key = $('apikey').value;
   const master = $('master').value;
-  if (!key || !master) return;
-  fetch('/api/key', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key, masterPassword: master }),
-  }).then(renderKeyStatus);
+  if (!key || !master) { flash($('setkey'), false, '请填全'); return; }
+  postWithFeedback($('setkey'), '/api/key', { key, masterPassword: master }, renderKeyStatus, '已保存');
 };
 $('setcfg').onclick = () => {
   const baseUrl = $('baseurl').value.trim();
   const model = $('model').value.trim();
-  if (!baseUrl && !model) return;
-  fetch('/api/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ baseUrl, model }),
-  }).then(renderConfigStatus);
+  if (!baseUrl && !model) { flash($('setcfg'), false, '请填一项'); return; }
+  postWithFeedback($('setcfg'), '/api/config', { baseUrl, model }, renderConfigStatus, '已保存');
 };
 $('clearEvents').onclick = () => {
   const list = $('events');
   list.innerHTML = '<li class="event event--empty">已清空显示（事件仍在后端）。</li>';
   lastIter = 0;
   $('iterCounter').textContent = 'iter 0';
+  flash($('clearEvents'), true, '已清空');
 };
 
 renderKeyStatus();

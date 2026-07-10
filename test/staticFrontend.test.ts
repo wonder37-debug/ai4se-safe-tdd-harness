@@ -50,6 +50,11 @@ test('redesign: approval reason input + Deny & 反馈 served via /app.js', async
     expect(body).toContain('反馈');
     // 拒绝时把输入框内容作为 reason 发送给后端（对话重定向）
     expect(body).toContain('reason');
+    // 点击反馈：app.js 含 flash() 与 postWithFeedback()，按钮成功/失败可见
+    expect(body).toContain('flash');
+    expect(body).toContain('postWithFeedback');
+    expect(body).toContain('is-flash-ok');
+    expect(body).toContain('is-flash-fail');
   } finally { srv.server.close(); }
 });
 

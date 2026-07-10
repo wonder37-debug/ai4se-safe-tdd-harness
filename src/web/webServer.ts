@@ -24,6 +24,9 @@ export async function startWebServer(opts: WebServerOpts): Promise<{ server: htt
     try {
       if (req.method === 'GET' && url.pathname === '/api/health') {
         res.end(JSON.stringify({ ok: true }));
+      } else if (req.method === 'GET' && url.pathname === '/favicon.ico') {
+        // 消除浏览器自动请求 favicon 的 404 噪声
+        res.statusCode = 204; res.end();
       } else if (req.method === 'GET' && url.pathname === '/api/events') {
         const since = Number(url.searchParams.get('since') ?? '0');
         res.end(JSON.stringify(opts.eventStore.since(since)));
@@ -48,7 +51,13 @@ export async function startWebServer(opts: WebServerOpts): Promise<{ server: htt
         res.end(JSON.stringify({ ok }));
       } else if (req.method === 'POST' && url.pathname === '/api/task') {
         const b = await body(req);
-        opts.loopFactory(b.task, b.cwd).then((r) => opts.eventStore.emit({ type: 'halt', payload: r, iter: 0 }));
+        // 仅当 loopFactory 短路返回 provider_error（未走 AgentLoop、内核未 emit halt）时，
+        // 由 web 补 emit 一条 halt；正常 finish/cap/stuck 内核已 emit，不再重复。
+        opts.loopFactory(b.task, b.cwd).then((r) => {
+          if (r.haltReason === 'provider_error') {
+            opts.eventStore.emit({ type: 'halt', payload: { reason: 'provider_error', iterations: r.iterations }, iter: 0 });
+          }
+        });
         res.end(JSON.stringify({ started: true }));
       } else if (req.method === 'GET') {
         // 静态前端面板（仅服务于 public/ 内文件，防路径穿越）

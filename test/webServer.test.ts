@@ -70,3 +70,50 @@ test('POST /api/config 可只更新单字段（保留另一字段）', async () 
     expect(r.body).toEqual({ baseUrl: 'https://x/v1', model: 'm2' });
   } finally { srv.server.close(); }
 });
+
+test('GET /favicon.ico 返回 204（消除浏览器 404 噪声）', async () => {
+  const { srv, port } = await boot();
+  try {
+    const r = await req('GET', port, '/favicon.ico');
+    expect(r.status).toBe(204);
+  } finally { srv.server.close(); }
+});
+
+test('POST /api_task 正常 finish 不再双 emit halt（仅 provider_error 才补 emit）', async () => {
+  // stub loopFactory 返回 finish 且不自行 emit（模拟 AgentLoop 已 emit 的场景）
+  // → webServer 不应再补一条 halt
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'web2-'));
+  const store = new EventStore();
+  const srv = await startWebServer({
+    port: 0, eventStore: store, approval: new HttpApprovalGateway(),
+    creds: new EncryptedFileStore(path.join(dir, 'c.enc')),
+    config: new JsonConfigStore(path.join(dir, 'config.json')),
+    loopFactory: async () => ({ haltReason: 'finish', iterations: 3 }),
+  });
+  const port = (srv.server.address() as any).port;
+  try {
+    await req('POST', port, '/api/task', { task: 't', cwd: dir });
+    const evs = await req('GET', port, '/api/events?since=0');
+    const halts = (evs.body as any[]).filter(e => e.type === 'halt');
+    expect(halts.length).toBe(0); // finish 由内核 emit，web 不再补
+  } finally { srv.server.close(); }
+});
+
+test('POST /api/task provider_error 时 web 补 emit 一条 halt（短路上未走 AgentLoop）', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'web3-'));
+  const store = new EventStore();
+  const srv = await startWebServer({
+    port: 0, eventStore: store, approval: new HttpApprovalGateway(),
+    creds: new EncryptedFileStore(path.join(dir, 'c.enc')),
+    config: new JsonConfigStore(path.join(dir, 'config.json')),
+    loopFactory: async () => ({ haltReason: 'provider_error', iterations: 0 }),
+  });
+  const port = (srv.server.address() as any).port;
+  try {
+    await req('POST', port, '/api/task', { task: 't', cwd: dir });
+    const evs = await req('GET', port, '/api/events?since=0');
+    const halts = (evs.body as any[]).filter(e => e.type === 'halt');
+    expect(halts.length).toBe(1); // provider_error 未走内核，web 补 emit
+    expect(halts[0].payload.reason).toBe('provider_error');
+  } finally { srv.server.close(); }
+});

@@ -27,6 +27,40 @@ export interface LoopFactoryOpts {
   eventStore: EventStore;
 }
 
+// 组装 system prompt：任务 + 平台信息 + 动作协议。
+// 平台信息让 LLM 用系统原生命令（Windows 上 del/Remove-Item 而非 rm），
+// 避免 'rm' 不是内部命令 之类的失败往返。纯函数，离线可单测。
+export function buildSystemPrompt(task: string, platform: string = process.platform): string {
+  const osName = platform === 'win32' ? 'Windows'
+    : platform === 'darwin' ? 'macOS'
+    : 'Linux/Unix';
+  const shellHint = platform === 'win32'
+    ? 'You are on Windows. Use Windows-native shell commands: `del` (not `rm`) to delete files, `dir` (not `ls`) to list, `type` (not `cat`) to read a file, `copy`/`move` to copy/move. PowerShell cmdlets (`Remove-Item`, `Get-ChildItem`) also work.'
+    : 'You are on a Unix-like system. Use `rm`/`ls`/`cat`.';
+  return `You are a safe coding agent. In each turn, you MUST output exactly one fenced code block in this format:
+
+\`\`\`action
+{"tool": "tool_name", "args": {...}}
+\`\`\`
+
+Available tools:
+- write_file: {"path": "string", "content": "string"}
+- read_file: {"path": "string"}
+- run_shell: {"command": "string"}
+- run_tests: {"command": "string"}
+- finish: {}
+
+Example:
+\`\`\`action
+{"tool": "write_file", "args": {"path": "add.js", "content": "module.exports=(a,b)=>a+b;"}}
+\`\`\`
+
+Platform: ${platform} (${osName}). ${shellHint}
+
+Complete this task:
+${task}`;
+}
+
 // ponytail: loopFactory 解析主密码 + 加密 key，再装配真实 AgentLoop（OpenAICompatProvider）。
 // 请求地址 / 模型名优先取自明文 config 文件（Web 面板可写入），缺省回退环境变量
 // （Docker / CI 仍可用 env 注入）。缺凭据的三条短路路径都返回 provider_error，
@@ -56,26 +90,7 @@ export function makeLoopFactory(opts: LoopFactoryOpts) {
       memory: new MemoryStore(path.join(workCwd, '.ai4se-memory')),
       cwd: workCwd,
       maxIter: 20,
-      systemPrompt: `You are a safe coding agent. In each turn, you MUST output exactly one fenced code block in this format:
-
-\`\`\`action
-{"tool": "tool_name", "args": {...}}
-\`\`\`
-
-Available tools:
-- write_file: {"path": "string", "content": "string"}
-- read_file: {"path": "string"}
-- run_shell: {"command": "string"}
-- run_tests: {"command": "string"}
-- finish: {}
-
-Example:
-\`\`\`action
-{"tool": "write_file", "args": {"path": "add.js", "content": "module.exports=(a,b)=>a+b;"}}
-\`\`\`
-
-Complete this task:
-${task}`,
+      systemPrompt: buildSystemPrompt(task, process.platform),
       sink: opts.eventStore,
     });
     return loop.run();
