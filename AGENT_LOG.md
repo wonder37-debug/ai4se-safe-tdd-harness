@@ -533,3 +533,31 @@
   - **"无反馈"是可用性硬伤**：按钮点击无可见响应，用户无法判断成功/失败——`flash` 这种轻量按钮态反馈比 toast 更贴合极简风格、且零依赖。
   - **双 halt 是"保险 emit"过度**：web handler 怕漏 emit 就无条件补，与内核 emit 叠加。正确做法是只补"内核未覆盖的分支"（provider_error 短路），而非全量补——"兜底"要兜在真正缺口上，否则制造重复噪声。
 - **commit**：见本条提交 `feat+fix: web click feedback, platform-aware prompt, favicon 204, no double halt`。
+
+---
+
+### 2026-07-10 · 阶段 22：合并 origin/main 分叉 + 交付物整理 + 推送
+
+- **背景**：本地 `main` 与 `origin/main` 分叉——本地领先 3 提交（本轮阶段 19/20/21：清理残留、可配置端点、点击反馈/平台感知/favicon/双halt），落后 1 提交 `8976dc7 fix(web): resolve button unresponsive and add offline mock fallback`（另一会话从 `fix/web-offline-fallback` worktree 推送）。两边在 index.ts/openaiCompat.ts/app.js/index.html/webEntry.test.ts 重叠且一处语义分叉：origin 把"无 key 静默 provider_error"改成"降级 ScriptedMock 跑离线自修正演示"（让面板无 key 也有可见事件流）。
+- **Superpowers 技能**：`finishing-a-development-branch` 视角（合并决策）、`receiving-code-review`（逐文件核 origin 改动）。
+- **合并策略**：`git merge origin/main`（一个 merge commit，一次性解决全部冲突，比 rebase 三次冲突省事）。冲突文件 5 个，全部手解，**两套互补改进皆保留**：
+  - `src/index.ts`：makeLoopFactory 保留 origin 离线降级（`tryOnlineKey`+`resolveCwd`+`ScriptedMock(offlineDemoActions)`）+ 本轮 `tryOnlineKey(opts)` 用 config.get() 取 baseUrl/model（config 优先、env 回退）+ `buildSystemPrompt` 平台注入。无 key 路径不再静默 provider_error，跑离线演示。
+  - `src/llm/openaiCompat.ts`：`adaptMessages`（origin）+ URL `/v1` 去重 + 防御式 body 读取（本轮）三特性叠加。adaptMessages 对 agentLoop 已 push 为 user 的消息是 no-op（安全冗余）；origin 的 adaptMessages 单测仍过。
+  - `src/web/public/app.js`：默认演示任务（origin）+ `flash`/`postWithFeedback`（本轮），统一用 `$('task')`（非 origin 残留的 `$('#task')` bug）。
+  - `src/web/public/index.html`：`API_KEY` 标签 + baseurl/model 输入 + OpenAI 提示（本轮）+ textarea 预填示例任务（origin）。
+  - `test/webEntry.test.ts`：origin 离线/在线测试（无 key→finish+add(2,3)=5；在线 fake fetch→finish 无 observation）+ 本轮 `SpyConfig` 测试（断言 `config.get()` 被调用→finish），把 provider_error 断言改为 finish（语义切换）。在线测试补 `config` 字段（合并后 LoopFactoryOpts 必需）。`fs`→`fsp` 修正（origin 重命名 import）。
+  - `src/llm/offlineDemo.ts`（origin 新文件）、`test/openaiCompat.test.ts`（origin adaptMessages 测试）自动合并无冲突。
+- **交付物整理（§5 清单核对）**：
+  - ✅ 齐全：SPEC/PLAN/SPEC_PROCESS/AGENT_LOG/README/Dockerfile/.gitlab-ci.yml（含 `unit-test` job）/demo/。
+  - ❌→⚠️ **REFLECTION.md 原缺失**：§6 禁止 AI 代写正文。本轮创建**仅含 §5 建议问题提纲的骨架**（9 节标题 + "本人填写"占位 + 置顶声明"AI 仅提供提纲未代写正文"），正文留学生本人补。
+  - 公网 WebUI URL（§5.9）：部署侧，README 已有部署说明，本轮不涉及新部署。
+- **验证**：`npm run build` 通过；`npm test` 22 suites / 73 passed + 1 skipped（含 webEntry 离线/在线新行为 + adaptMessages + config spy + 原有套件全绿）；端到端 `node dist/index.js --web` 无 key 提交任务→离线自修正演示流出（write buggy→test assertion fail→fix→test pass→finish→halt:finish，10 事件），favicon 204，前端 API_KEY/config 输入/预填任务俱全。提交前 `grep sk-79a4` 暂存区 0 命中。
+- **worktree 未清理（记录）**：`.claude/worktrees/feat+08-demo-delivery`（`fix/web-offline-fallback` 分支）被一活跃 Claude 会话锁定（pid 37704）——**未强制移除**（`-f -f` 会破坏该会话）。它停在已合并的旧提交 `8976dc7`，`.claude/worktrees/` 已 gitignored，无害。会话结束后可 `git worktree unlock` + `remove`。
+- **推送**：`git push origin main` → `8976dc7..90f051b main -> main`。本地 main = origin main = 一份自洽代码。
+- **commit**：`90f051b`（Merge origin/main）。
+- **教训**：
+  - **并行会话改同一批文件会硬冲突**：本轮与另一会话都改 index.ts/openaiCompat.ts/app.js/index.html/webEntry，且都修了"按钮无响应"+"observation 角色"两 bug 但路径不同——合并需逐文件核两边意图、保留互补特性，不能简单取一方。
+  - **语义分叉时以"更优的行为"为准**：origin 的"无 key 降级演示"比本轮保留的"无 key 静默 provider_error"体验更好（评审无 key 也能看完整闭环），故 webEntry 测试断言随 origin 行为切换（provider_error→finish），本轮 spy 测试相应适配。
+  - **被锁定的 worktree 不强删**：lock 由活跃会话持有时，`-f -f` 会破坏该会话工作区——留它在已合并旧提交上无害，等会话结束再清。
+  - **学术诚信边界**：REFLECTION.md 缺失时，AI 只能提供问题提纲骨架、明确标注"未代写正文"，正文必须学生本人写——这是 §6 硬约束，不留模糊空间。
+- **下一步（用户侧）**：① 本人撰写 REFLECTION.md 正文（1500–2500 字）；② 确认公网 WebUI URL（§5.9）已部署可访问；③ 另一会话结束后清理 `fix/web-offline-fallback` worktree 与分支。
