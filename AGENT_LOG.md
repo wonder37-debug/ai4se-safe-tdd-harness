@@ -551,7 +551,7 @@
   - ✅ 齐全：SPEC/PLAN/SPEC_PROCESS/AGENT_LOG/README/Dockerfile/.gitlab-ci.yml（含 `unit-test` job）/demo/。
   - ❌→⚠️ **REFLECTION.md 原缺失**：§6 禁止 AI 代写正文。本轮创建**仅含 §5 建议问题提纲的骨架**（9 节标题 + "本人填写"占位 + 置顶声明"AI 仅提供提纲未代写正文"），正文留学生本人补。
   - 公网 WebUI URL（§5.9）：部署侧，README 已有部署说明，本轮不涉及新部署。
-- **验证**：`npm run build` 通过；`npm test` 22 suites / 73 passed + 1 skipped（含 webEntry 离线/在线新行为 + adaptMessages + config spy + 原有套件全绿）；端到端 `node dist/index.js --web` 无 key 提交任务→离线自修正演示流出（write buggy→test assertion fail→fix→test pass→finish→halt:finish，10 事件），favicon 204，前端 API_KEY/config 输入/预填任务俱全。提交前 `grep sk-79a4` 暂存区 0 命中。
+- **验证**：`npm run build` 通过；`npm test` 22 suites / 73 passed + 1 skipped（含 webEntry 离线/在线新行为 + adaptMessages + config spy + 原有套件全绿）；端到端 `node dist/index.js --web` 无 key 提交任务→离线自修正演示流出（write buggy→test assertion fail→fix→test pass→finish→halt:finish，10 事件），favicon 204，前端 API_KEY/config 输入/预填任务俱全。提交前 `grep 'sk-'` 暂存区无明文 key 命中。
 - **worktree 未清理（记录）**：`.claude/worktrees/feat+08-demo-delivery`（`fix/web-offline-fallback` 分支）被一活跃 Claude 会话锁定（pid 37704）——**未强制移除**（`-f -f` 会破坏该会话）。它停在已合并的旧提交 `8976dc7`，`.claude/worktrees/` 已 gitignored，无害。会话结束后可 `git worktree unlock` + `remove`。
 - **推送**：`git push origin main` → `8976dc7..90f051b main -> main`。本地 main = origin main = 一份自洽代码。
 - **commit**：`90f051b`（Merge origin/main）。
