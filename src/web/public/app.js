@@ -267,8 +267,9 @@ async function poll() {
 
 // ───────── 用户动作 ─────────
 $('start').onclick = () => {
-  if (!$('task').value.trim()) { flash($('start'), false, '任务为空'); return; }
-  postWithFeedback($('start'), '/api/task', { task: $('task').value, cwd: $('cwd').value }, null, '已提交');
+  // 任务框留空时给一个默认演示任务，避免空点击静默无反馈——离线降级下也能直接看到自修正闭环
+  const task = $('task').value.trim() || 'implement add(a,b) returning the sum, verified by Jest';
+  postWithFeedback($('start'), '/api/task', { task, cwd: $('cwd').value }, null, '已提交');
 };
 $('setkey').onclick = () => {
   const key = $('apikey').value;

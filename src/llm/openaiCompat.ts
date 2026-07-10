@@ -1,9 +1,20 @@
 import { LLMProvider } from './provider';
-import { Message } from '../types';
+import { Message, Role } from '../types';
 
 export class AuthError extends Error { constructor(m: string) { super(m); this.name = 'AuthError'; } }
 
 export interface OpenAICompatOpts { baseUrl: string; apiKey: string; model?: string; fetch?: typeof fetch; }
+
+// OpenAI /v1/chat/completions 只接受 system/user/assistant 角色；内核回灌的 'observation'
+// 角色会被端点判为非法 → HTTP 400。故发送前把 observation 降级为 user 并加 Observation 前缀，
+// 既保留语义、又彻底兼容标准端点。
+export function adaptMessages(messages: Message[]): { role: Role; content: string }[] {
+  return messages.map((m) =>
+    m.role === 'observation'
+      ? { role: 'user', content: 'Observation: ' + m.content }
+      : { role: m.role, content: m.content },
+  );
+}
 
 export class OpenAICompatProvider implements LLMProvider {
   private fetchImpl: typeof fetch;
@@ -17,7 +28,7 @@ export class OpenAICompatProvider implements LLMProvider {
     const res = await this.fetchImpl(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.opts.apiKey}` },
-      body: JSON.stringify({ model: this.opts.model ?? 'qwen-flash', messages, temperature: 0 }),
+      body: JSON.stringify({ model: this.opts.model ?? 'gpt-4o-mini', messages: adaptMessages(messages), temperature: 0 }),
     });
     if (!res.ok) {
       // 防御式读取 body：真实 Response 有 .text()，但单测 mock 可能只提供 .json()；
