@@ -1,6 +1,7 @@
 import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
 import { existsSync } from 'fs';
+import * as path from 'path';
 
 export interface CredentialStore {
   status(): { present: boolean; source: string };
@@ -28,6 +29,7 @@ export class EncryptedFileStore implements CredentialStore {
     const ct = Buffer.concat([cipher.update(key, 'utf8'), cipher.final()]);
     const tag = cipher.getAuthTag();
     const blob = Buffer.concat([iv, tag, ct]);
+    await fs.mkdir(path.dirname(this.file), { recursive: true });
     await fs.writeFile(this.file, blob);
   }
 
