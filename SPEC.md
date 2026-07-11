@@ -1,10 +1,5 @@
 # SPEC.md — AI4SE-Safe-TDD-Harness
 
-> Spec-Driven, Subagent-Built, Human-Owned.
-> 本文件由 `brainstorming` 技能沉淀，经 8 轮追问 + 4 节设计确认 + 2 周可完成性裁剪后形成。
-> 项目类型：A · Coding Agent Harness。本文件须与《AI4SE 期末项目 · 通用要求》拼接阅读。
-> **在 SPEC 与 PLAN 通过冷启动验证之前，禁止编写任何实现代码。**
-
 ---
 
 ## 1. 问题陈述
@@ -17,7 +12,7 @@
 
 **为什么值得做**：它把"治理 / 反馈 / 安全 / 分发"这些在 AI 协作中容易松懈的工程纪律，落实为可移除 LLM 后仍能确定性单测的代码机制——这正是课程命题"当 LLM 能完成大部分编码工作时，工程师的真正价值在哪里"的可执行回答。
 
-**2 周可完成性定位**：本项目为个人课程项目，优先可完成性。范围刻意收敛到一个自研内核 + 两个深机制（治理护栏、TDD 反馈闭环）+ 最小 WebUI + Docker 分发。刻意不引入：多 agent 编排、向量检索记忆、多 LLM 供应商适配、npm 发包流水线、WebSocket 实时推送。
+**项目定位**：本项目为个人课程项目，优先可完成性。范围收敛到一个自研内核 + 两个深机制（治理护栏、TDD 反馈闭环）+ 最小 WebUI + Docker 分发。暂不引入：多 agent 编排、向量检索记忆、多 LLM 供应商适配、npm 发包流水线、WebSocket 实时推送。
 
 ---
 
@@ -77,7 +72,7 @@
 - 回灌：组装成 `{role:'observation', content: JSON.stringify(feedback)}` 追加到 messages。
 - 边界：解析不出结构 → `errorType:'other'`，回灌截断 stderr 末 30 行。
 - 错误处理：纯函数，无副作用；超时归类 `other`。
-- Parser 接口可插拔（`{parse(stdout,stderr): Feedback}`），2 周内只实现 `JestParser`。
+- Parser 接口可插拔（`{parse(stdout,stderr): Feedback}`），暂只实现 `JestParser`。
 
 ### 3.7 AgentLoop（自研主循环状态机）
 - 状态：`RUNNING / APPROVAL_PENDING / EXECUTING / HALTED`（`types.ts` 导出 `LoopState` 联合型作规约可追溯；循环内部以控制流位置编码这些状态）。
@@ -104,7 +99,7 @@
   - `GET /api/events?since=N` — 返回 id>N 的事件数组（action/observation/审批请求/halt）。
   - `POST /api/approval` — `{id, decision, reason}`，触发 `HttpApprovalGateway` resolver。
 - 前端：静态 HTML + 原生 JS（无框架），三栏：任务输入 / 事件流（每秒轮询）/ 待审批区。
-- 边界：单任务并发（2 周内不支持多任务并行）。
+- 边界：单任务并发。
 
 ---
 
@@ -171,7 +166,7 @@
 7. 全程事件入队列供 `GET /api/events` 轮询。
 
 ### 5.3 外部依赖
-- LLM 供应商：OpenAI-compatible `/v1/chat/completions`（匹配 `.env` 的 `CLAUDE_API_KEY` + `API_BASE_URL` 代理）。
+- LLM 供应商：OpenAI-compatible `/v1/chat/completions`（匹配 `.env` 的 `API_KEY` + `API_BASE_URL` 代理）。
 - npm 运行时：Node 20 LTS。
 - 运行时依赖：`shell-quote`（tokenize）、HTTP 库（`undici` 或 Node 内置 `fetch`）、无框架前端。
 - 外部工具：被 agent 调用的 `npm test`（靶项目用 Jest）。
@@ -196,7 +191,7 @@
 - 存储：`EncryptedFileStore`（AES-256-GCM，`~/.ai4se/creds.enc`，主密码隐藏输入）。
 - 录入/更新/清除：首运行引导隐藏录入；`status()` 只返回 `{present, source}` 不回显明文；`clear()` 删文件并断言不可读。
 - 来源优先级：加密文件 > `.env`（fallback，附告警）。
-- 容器：主密码经 `MASTER_PASSWORD` 环境或 stdin；禁止 `-e CLAUDE_API_KEY=sk-...`。
+- 容器：主密码经 `MASTER_PASSWORD` 环境或 stdin；禁止 `-e API_KEY=sk-...`。
 
 ### 7.2 分发（仅 Docker，2 周裁剪）
 - `Dockerfile`（多阶段：stage1 装依赖+构建静态前端；stage2 `npm ci --omit=dev` + 复制产物 → 单镜像 `node server.js`）。
@@ -213,9 +208,9 @@
 - **自研主循环（while 状态机）**：满足 §A.4-A"不得寄生高层框架"；状态机用普通 switch 实现，可单测。
 - **OpenAI-compatible 单供应商**：匹配现成 `.env` 代理；不做多供应商适配（YAGNI）。
 - **shell-quote tokenize**：在 token 层而非字符串层匹配，揭穿混淆，是治理维度工程深度的核心。
-- **轮询而非 WebSocket**：2 周内省 `ws` 管道，演示够用。
-- **无框架前端**：省构建链；静态 HTML+JS 足够面板交互。
-- **Docker 单分发**：同时满足分发 + WebUI 托管 + 部署 URL；砍 npm publish 降烂尾风险。
+- **轮询而非 WebSocket**：省 `ws` 管道，演示够用。
+- **无框架前端 (Open Design)**：选用 `Anthropic Minimal` 设计系统与 `frontend-design` 技能。免去构建链，利用原生静态 HTML/JS/CSS 满足面板与审批的轻量级交互。
+- **Docker 单分发**：满足分发要求。
 
 ---
 
@@ -235,10 +230,8 @@
 
 - **R1**：`shell-quote` 对畸形/极构造命令可能抛错 → 缓解：捕获异常一律判 `high` 强制审批。
 - **R2**：Jest 输出格式随版本变化 → 缓解：Parser 接口可插拔，固定演示用 Jest 版本；解析失败降级 `other`。
-- **R3**：`HttpApprovalGateway` 挂起 resolver 在进程崩溃时泄漏 → 2 周内接受单任务、重启即清。
-- **R4**：2 周时间风险 → 已裁剪（T1-T4）；若仍紧张，优先保 AC1/AC2/AC3/AC7（内核+两深机制+演示），WebUI 降级为只读状态页。
+- **R3**：`HttpApprovalGateway` 挂起 resolver 在进程崩溃时泄漏 → 接受单任务、重启即清。
 - **U1**：是否需要 agent 工作区路径围栏？→ 本期决定**不加**（仅命令护栏），评审时若质疑再补。
-- **U2**：部署平台（Fly.io/Render/阿里云）？→ PLAN 阶段定，优先免费额度。
 
 ---
 
@@ -266,15 +259,3 @@
 - **幕③**：重点维度深行为——护栏多混淆绕过案例（`rm -- -rf /`、`$(echo rm) -rf /`、base64 管道）+ severity 高/低分级 + 卡死停机（连续 2 轮同断言点失败 → `HALTED(stuck)`）。
 - 形态：`demo/mechanism-demo.test.ts`，`npm run demo` 一键复现，离线。
 
----
-
-## 12. 范围裁剪记录（2 周可完成性）
-
-| 裁剪 | 原范围 | 裁剪后 | 理由 |
-|---|---|---|---|
-| T1 | Docker + npm 双分发 | 仅 Docker | 砍发包流水线，Docker 已覆盖分发+WebUI+部署URL |
-| T2 | WebSocket 实时推送 | HTTP 轮询 | 省 `ws` 管道，演示够用 |
-| T3 | 4 类错误分类 | 3 类（assertion/syntax/other） | Parser 可插拔，仅 JestParser 稳健识别前两类 |
-| T4 | 每微功能一 worktree | 每大里程碑一 worktree | 个人项目，减少流程开销 |
-
-**保底优先级**（若时间告急）：AC1 内核 → AC2 护栏 → AC3 反馈闭环 → AC7 机制演示 → AC5 WebUI（可降级只读）→ AC4 凭据 → AC6 CI。

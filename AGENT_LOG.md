@@ -1,7 +1,6 @@
 # AGENT_LOG.md
 
 > 按 §4.9 要求，时间顺序记录关键节点：时间戳 + task 编号、触发的 Superpowers 技能、关键 prompt/context 配置、subagent/agent 输出的关键片段或 commit hash、人工干预（改了什么、为什么）、教训。
-> 时间戳为本次会话内顺序时刻（2026-07-08），正式提交前由作者校准为真实时刻。
 
 ---
 
@@ -11,8 +10,8 @@
 - **task 编号**：T0（前置）。
 - **关键 context 配置**：读取仓库根两份要求文档（`AI4SE 期末项目 · 通用要求.md`、`AI4SE_Final_Project_A_Coding_Agent_Harness.md`）、`.gitlab-ci.yml`（Auto-DevOps 模板 + SAST + secret-detection，**缺 `unit-test` job**）、`.env.example`、`.gitignore`。
 - **agent 输出**：生成 `CLAUDE.md`（commit 前置于本次提交），固化硬约束：harness 必须自研内核（禁 LangChain/AutoGen/CrewAI 高层 loop）、机制必须是代码非提示词、TDD 强制、Superpowers 七步流程、SPEC+PLAN 冷启动验证前不写实现、凭据三不（不硬编码/不提交/不入日志）。
-- **关键发现 / 安全告警**：`.env` 内含一个形似真实的 `sk-...` key（`CLAUDE_API_KEY`）。已确认被 `.gitignore` 排除、未进 git；agent 未在任何输出中打印或提交该 key。
-- **人工干预**：无（用户仅要求分析代码库生成 CLAUDE.md）。
+- **关键发现 / 安全告警**：`.env` 内含一个形似真实的 `sk-...` key（`API_KEY`）。已确认被 `.gitignore` 排除、未进 git；agent 未在任何输出中打印或提交该 key。
+- **人工干预**：无（仅要求分析代码库生成 CLAUDE.md）。
 - **教训**：`/init` 阶段就应把"评分硬约束"与"未决缺口（CI 缺 unit-test job）"写进 CLAUDE.md，避免后续阶段遗忘；安全上 `.env` 明文 key 即使被 ignore 也应在日志中显式标注风险。
 
 ---
@@ -23,7 +22,7 @@
 - **task 编号**：BT-1（Explore project context）。
 - **关键 context**：复用阶段 0 已读文档；确认仓库为 greenfield（无源码、无 SPEC/PLAN、未选语言）。
 - **agent 输出**：建立 brainstorming checklist（7 个 task），判定项目规模适中、无需拆子项目，可直接进入单 spec 流程。
-- **人工干预**：用户给定技术栈 Node.js、项目名 AI4SE-Safe-TDD-Harness，并点名 4 个重点追问方向（主循环 / Mock LLM / 护栏 / TDD 反馈）+ 凭据与分发。
+- **人工干预**：给定技术栈 Node.js、项目名 AI4SE-Safe-TDD-Harness，并点名 4 个重点追问方向（主循环 / Mock LLM / 护栏 / TDD 反馈）+ 凭据与分发。
 - **教训**：用户点名重点方向时，应把它们映射到 checklist 的"提问"环节逐个落实，而不是在设计中才补。
 
 ---
@@ -32,7 +31,7 @@
 
 - **触发的技能**：`brainstorming`（提问环节）。
 - **task 编号**：BT-2。
-- **策略**：每问给 2-3 个带取舍的选项 + 推荐，多选一；每问聚焦一个真正的设计分叉。各问题的"选项"即"2-3 方案 + 取舍"，用户逐一裁决。
+- **策略**：每问给 2-3 个带取舍的选项 + 推荐，多选一；每问聚焦一个真正的设计分叉。各问题的"选项"即"2-3 方案 + 取舍"，逐一裁决。
 - **8 轮裁决**：
 
 | # | 议题 | 选项 | 用户裁决 |
@@ -47,8 +46,8 @@
 | 8 | 路径围栏 | **A 仅命令护栏** / B 命令+路径围栏 | **A** |
 
 - **agent 输出**：8 轮后定型 LLMProvider 契约 `async complete(messages): Promise<{text,stopReason}>`、Guardrail 输入 `Action` 输出 `{severity,reasons}`、FeedbackClassifier 输出 `Feedback`、ApprovalGateway 接口。
-- **人工干预**：无逐轮干预；用户对每轮直接裁决。
-- **教训**：把"选项即方案对比"嵌入提问，既满足技能"propose 2-3 approaches"要求，又不额外消耗一轮对话；多选一比开放问答更省用户认知负荷。
+- **人工干预**：无逐轮干预；对每轮直接裁决。
+- **教训**：把"选项即方案对比"嵌入提问，既满足技能"propose 2-3 approaches"要求，又不额外消耗一轮对话；多选一比开放问答更省认知负荷。
 
 ---
 
@@ -57,7 +56,7 @@
 - **触发的技能**：`brainstorming`（present design）。
 - **task 编号**：BT-4。
 - **agent 输出**：分 4 节呈现——①架构/主循环状态机/LLMProvider/Mock/动作协议 ②治理护栏+HITL ③TDD 反馈闭环+记忆最小实现 ④凭据/分发/WebUI/CI/机制演示。同时替用户做了几个低风险默认决定（生产 LLM 走 OpenAI-compatible、工具集 6 个、JestParser、MemoryStore 文件式最小实现）并明示可否决。
-- **人工干预（关键）**：用户"全部确认"，但追加硬约束——**"个人课程项目、2 周内可完成、勿因过度工业级工程化而烂尾"**。这是本阶段最重要的人工输入。
+- **人工干预（关键）**："全部确认"，但追加硬约束——**"个人课程项目、注意可完成性、勿因过度工业级工程化而烂尾"**。这是本阶段最重要的人工输入。
 - **教训**：用户确认设计后追加的"可完成性"约束，优先级高于此前所有装饰性扩展；应主动识别并裁剪 gold-plating，而非等用户点名。
 
 ---
@@ -67,12 +66,12 @@
 - **触发的技能**：`brainstorming`（设计修订）。
 - **task 编号**：BT-4（修订）。
 - **agent 输出**：提出 4 处减负裁剪——
-  - **T1**：分发 Docker+npm → **仅 Docker**（逆转用户阶段 2 第 7 问的 C 选项；点名给用户否决机会）。
+  - **T1**：分发 Docker+npm → **仅 Docker**（逆转用户阶段 2 第 7 问的 C 选项；点名给否决机会）。
   - **T2**：WebUI WebSocket → **HTTP 轮询**（省 `ws` 管道）。
   - **T3**：错误分类 4 类 → **3 类**（assertion/syntax/other；Parser 接口仍可插拔）。
   - **T4**：每微功能一 worktree → **每大里程碑一 worktree**。
   - 保底优先级：AC1 内核 → AC2 护栏 → AC3 反馈 → AC7 演示 → AC5 WebUI（可降只读）→ AC4 凭据 → AC6 CI。
-- **人工干预**：用户未否决 T1，等于接受裁剪。
+- **人工干预**：未否决 T1，等于接受裁剪。
 - **教训**：当某项裁剪逆转了用户此前显式选择时，必须单独点名提示，不可静默改。
 
 ---
@@ -81,13 +80,13 @@
 
 - **触发的技能**：`brainstorming`（write design doc）。
 - **task 编号**：BT-5。
-- **关键 context**：用户偏好文件名 `SPEC.md`（项目 §4.2 硬交付名）覆盖技能默认路径 `docs/superpowers/specs/...`。
+- **关键 context**：偏好文件名 `SPEC.md`（项目 §4.2 硬交付名）覆盖技能默认路径 `docs/superpowers/specs/...`。
 - **agent 输出**：写入 `SPEC.md`，覆盖 12 节：问题陈述、5 INVEST 用户故事、按模块功能规约、NFR（含 §4.2 凭据威胁模型表）、架构组件图+数据流+外部依赖、数据模型、凭据与分发设计、技术选型理由、验收标准、风险与未决、项目 A 专属「领域与机制设计」、2 周裁剪记录。
 - **Spec 自检（inline 修复 2 处不一致）**：
   1. §3.4 危险模式库补"带 `Authorization`/`-H token` 头的外发请求"模式，与 §4.2 威胁表"凭据外传"行对齐。
   2. §7.2 把 `<registry>` 占位符软化为"具体 registry/镜像名在 PLAN 定"，与未决项 U2 一致。
 - **commit hash**：`374a95b`（`docs: add CLAUDE.md and SPEC.md (brainstorming output)`），含 CLAUDE.md + SPEC.md，2 files / +322 行。
-- **人工干预**：用户确认设计可写 SPEC；裁剪范围被接受。
+- **人工干预**：确认设计可写 SPEC；裁剪范围被接受。
 - **教训**：SPEC 自检要专门做"跨节一致性"扫描（如威胁表 ↔ 模式库、超时值 ↔ 工具边界），单节内一致不够。
 
 ---
@@ -96,7 +95,7 @@
 
 - **触发的技能**：`brainstorming`（transition）→ 即将触发 `writing-plans`。
 - **task 编号**：BT-6/BT-7。
-- **人工干预**：用户"设计已确认"，要求先填本日志再触发 writing-plans。
+- **人工干预**："设计已确认"，要求先填本日志再触发 writing-plans。
 - **agent 输出**：本日志 + 随后调用 `writing-plans` 生成 `PLAN.md`。
 - **教训**：brainstorming 的终止态是"调用 writing-plans"，不调用其它实现技能；签字前不写实现代码（§4 硬门）。
 
@@ -106,7 +105,7 @@
 
 - **触发的技能**：`writing-plans`。
 - **task 编号**：WP-1。
-- **关键 context**：读取已签字 SPEC（commit `374a95b`）；用户要求"先填 AGENT_LOG 再触发 writing-plans"。
+- **关键 context**：读取已签字 SPEC（commit `374a95b`）；要求"先填 AGENT_LOG 再触发 writing-plans"。
 - **关键决策（agent 自主）**：
   - 技术栈落定为 **TypeScript 5 + Jest/ts-jest**（SPEC §8 只写了 Node.js，TS 在此敲定）——理由：接口多、需类型约束保证 mockable，契合"机制是代码"评分；ts-jest 一次配置约 30min，烂尾风险低。
   - 运行时依赖收敛为**仅 `shell-quote`**（Node 20 内置 `http/crypto/fs/child_process/global fetch`），最大限度降依赖烂尾风险。
@@ -114,12 +113,12 @@
   - 演示靶项目用 `run-tests.sh`（脚本判 `add.js` 正确性 + 输出 Jest 格式 stderr）而非嵌套跑 jest，规避子进程 jest 的解析/解析 flakiness，保 AC3 确定性。
 - **agent 输出**：`PLAN.md`——18 个 TDD 任务（每任务 5 步：写失败测试→验证失败→最小实现→验证通过→commit），每个含完整代码、确切文件路径、确切命令与预期输出。头部含 Goal/Architecture/Tech Stack/Global Constraints；含文件结构图、依赖/并行度图、Self-Review（spec 覆盖 / 占位符扫描 / 类型一致性三查）。覆盖 SPEC 全部 12 节。
 - **commit hash**：见本次提交（PLAN.md + AGENT_LOG.md 阶段 6）。
-- **人工干预**：无（用户仅要求按 SPEC 生成 PLAN）。
+- **人工干预**：无（仅要求按 SPEC 生成 PLAN）。
 - **教训**：
   - writing-plans 的"完整代码无占位符"要求与"2 周可完成性"存在张力——通过让每个模块实现最小化（YAGNI）兼顾：如 `run_tests` 只捕获不解析、解析归 `FeedbackClassifier`、HITL 挂起 resolver 用最简 Map。
   - 跨任务类型一致性要专门做一次 Self-Review 扫描（如 `complete` 返回 `{text,stopReason}` 在 T4/T13/T12 三处须一致），单任务内一致不够。
   - 写 PLAN 时若一个 task 会改另一个 task 已交付的产物（如 T18 重写 `src/index.ts` 但 T1 smoke test 依赖 `greet`），必须在计划里显式声明"保留 export 不破坏前序测试"。
-- **下一步**：待用户选执行模式（subagent-driven / inline）后，调用对应子技能按 task 推进；每完成一 task 在本日志追加节点 + 在 PLAN.md 标 commit hash。
+- **下一步**：待选执行模式（subagent-driven / inline）后，调用对应子技能按 task 推进；每完成一 task 在本日志追加节点 + 在 PLAN.md 标 commit hash。
 
 ---
 
@@ -134,22 +133,22 @@
   - SPEC §3.3（ToolContext 裁剪 + timeout 降级点）、§3.7（LoopState 可追溯）、§6（Approval 复合型 + EventType 补 approval_decision + payload 映射）。
   - PLAN 任务 1（tsconfig rootDir:src + include:src + build 脚本补 cpSync + .gitignore 措辞）、任务 2（types 加 LoopState/Approval + 测试覆盖）、任务 3（TOOL_NAMES guard + 测试）、任务 5（errMsg helper + ToolContext 注）、任务 6（run_tests 超时检测）、任务 8（timeout→other 注）、任务 12（LoopState 注）、任务 18（Dockerfile 移除冗余 COPY demo）。
   - 新建 `SPEC_PROCESS.md`（§4.5 过程文档，含修订前后 7 组 diff）。
-- **人工干预**：用户提供第二个 agent 的审计报告，要求我"审核评估后修正并记入 SPEC_PROCESS.md"。
+- **人工干预**：提供第二个 agent 的审计报告，要求"审核评估后修正并记入 SPEC_PROCESS.md"。
 - **教训**：
   - spec 清晰度被严重高估——主 agent 与 brainstorming 沉淀的隐性共识（如"dist 只含 src"）没写进 SPEC/PLAN，冷启动 agent 在每个隐性假设处受阻。
   - 跨节一致性须专门扫描（STUCK-2/3、GAP-1 都是 SPEC 一节说 X、PLAN 另一节做 Y）。
   - 冷启动 agent 也会误判（GAP-6 编译判断），逐条复核技术正确性而非盲收。
-- **下一步**：SPEC/PLAN 已对齐，可进入实现；待用户选执行模式。
+- **下一步**：SPEC/PLAN 已对齐，可进入实现；待选执行模式。
 
 ---
 
 ## 2026-07-08 · 阶段 8：executing-plans — feat/01-infra 任务 1/2/3（TDD）
 
-- **触发的技能**：`using-git-worktrees` → `karpathy-guidelines` + `ponytail` + `test-driven-development`（用户显式要求"严格 TDD"+ 系统级特化技能）。
+- **触发的技能**：`using-git-worktrees` → `karpathy-guidelines` + `ponytail` + `test-driven-development`（显式要求"严格 TDD"+ 系统级特化技能）。
 - **task 编号**：PLAN 任务 1（脚手架）/ 任务 2（核心类型）/ 任务 3（ActionProtocol 解析器）。
 - **关键 context 配置**：worktree `feat/01-infra`（路径 `.claude/worktrees/feat+01-infra`），分支从 main 切出；全程在该隔离工作区开发，未触碰主 checkout。
 - **worktree 创建细节**：用原生 `EnterWorktree` 工具（技能 Step 1a 优先级），但工具按安全规则把分支名 `feat/01-infra` 改写为 `worktree-feat+01-infra`（`/`→`+` + `worktree-` 前缀）。用户明确要求分支名 `feat/01-infra`，故在 worktree 内 `git branch -m feat/01-infra` 重命名——`feat/01-infra` 是合法 git ref 名（斜杠允许），重命名不改目录、不破坏 worktree 关联。
-- **关键 prompt**：用户分两轮下达——轮 1 仅任务 1（脚手架 TDD 绿屏即 commit 并停）；轮 2 任务 2+3 串行 TDD，每任务独立 commit，完成后更新 PLAN/AGENT_LOG 并做独立 docs commit。
+- **关键 prompt**：分两轮下达——轮 1 仅任务 1（脚手架 TDD 绿屏即 commit 并停）；轮 2 任务 2+3 串行 TDD，每任务独立 commit，完成后更新 PLAN/AGENT_LOG 并做独立 docs commit。
 - **TDD 执行（每任务 红→绿→重构）**：
   - 任务 1：RED `test/smoke.test.ts` → `npx jest` 报 `TS2307 Cannot find module '../src/index'`（feature 缺失，正确失败）→ 配置工具链（package.json/tsconfig/jest.config，属 TDD 例外）+ 装依赖（TS5/ts-jest/jest/@types + shell-quote）→ GREEN 写一行 `greet` → PASS（1 test）。
   - 任务 2：RED `test/types.test.ts` → `TS2307 '../src/types'` → GREEN 写 `src/types.ts`（SPEC §6 全部数据模型，含 `LoopState`/`Approval` 复合型/`EventType` 含 `approval_decision`，对齐阶段 7 冷启动修订）→ PASS（1 test）。
@@ -160,14 +159,14 @@
   - 任务 2 `298d472` — `feat(types): add core domain types`
   - 任务 3 `2e5a50f` — `feat(protocol): action fence parser`
 - **人工干预**：
-  - 轮 1 结束后 agent 主动提出"PLAN 勾选 + AGENT_LOG 记录"未并入脚手架 commit（保持外科手术式单一关注点），征询用户；用户轮 2 明确要求合并到本轮 docs commit。故任务 1 的 PLAN 勾选在本 docs commit 一并补上。
-  - 用户要求启用 `/karpathy-guidelines` + `/ponytail` 两个系统级技能（高性能/类型安全/CommonJS 友好），agent 额外加载 `test-driven-development` 以落实"严格 TDD"硬约束。
+  - 轮 1 结束后 agent 主动提出"PLAN 勾选 + AGENT_LOG 记录"未并入脚手架 commit（保持外科手术式单一关注点），征询；轮 2 明确要求合并到本轮 docs commit。故任务 1 的 PLAN 勾选在本 docs commit 一并补上。
+  - 要求启用 `/karpathy-guidelines` + `/ponytail` 两个系统级技能（高性能/类型安全/CommonJS 友好），agent 额外加载 `test-driven-development` 以落实"严格 TDD"硬约束。
 - **教训**：
   - **原生 worktree 工具会改写分支名**：`EnterWorktree` 对含 `/` 的名字做 sanitize（`/`→`+` + 前缀）。当用户要求精确分支名且该名是合法 git ref 时，`git branch -m` 重命名是低风险修正，不破坏 worktree 关联——但应在日志记录，避免后续 PR 误用工具原名。
   - **脚手架 TDD 的"先看红"张力**：要跑测试须先有工具链（jest/ts-jest），而工具链配置属 TDD 例外（非生产行为）。解法：测试文件先写、配置+装依赖次之、再跑出 RED（feature 缺失的 TS2307），最后写最小实现到 GREEN——`greet` 这行生产代码确在测试失败后才写，TDD 铁律不破。
   - **TS2307 即有效 RED**：greenfield 新模块的"模块未找到"编译错是合法的 TDD 失败（feature 缺失），不必硬凑成断言失败；只要失败原因是"待实现功能不存在"而非笔误即可。
   - **PLAN 勾选的锚点策略**：PLAN 多个任务的"步骤 N"标题文案相同，`- [ ] **步骤 1：写失败测试**` 跨任务重复，不能 replace_all（会误勾未完成任务）。用"步骤标题 + 紧随的唯一行（测试文件名/实现文件名/git add 行）"作 old_string 锚点，逐处精确翻转。
-- **下一步**：feat/01-infra 分支内剩余任务（任务 4 ScriptedMock 起的 LLM/工具/护栏/反馈/记忆/凭据/审批/主循环/web/分发）待用户下达；或按 PLAN 依赖图在隔离 worktree 并行（任务 3‖4‖9）。
+- **下一步**：feat/01-infra 分支内剩余任务（任务 4 ScriptedMock 起的 LLM/工具/护栏/反馈/记忆/凭据/审批/主循环/web/分发）待下达；或按 PLAN 依赖图在隔离 worktree 并行（任务 3‖4‖9）。
 
 ---
 
@@ -185,7 +184,7 @@
 - **commit hashes**：
   - `ce5a5d1` — `chore: add .claude/ to .gitignore`（安全补丁，独立提交）
   - `4b6dcaf` — `feat(llm): LLMProvider interface + ScriptedMock`（任务 4 实现）
-- **人工干预**：用户要求"分支 2 独立 worktree、先做 .claude 安全补丁、严格 TDD 任务 4、独立 docs commit、推送远端不本地合并 main、提示网页建 MR"——逐条执行。
+- **人工干预**：要求"分支 2 独立 worktree、先做 .claude 安全补丁、严格 TDD 任务 4、独立 docs commit、推送远端不本地合并 main、提示网页建 MR"——逐条执行。
 - **教训**：
   - **worktree 分支名精确控制**：当用户要求精确分支名且原生工具会 sanitize 时，`git worktree add -b <精确名> <path> <base>` + `EnterWorktree(path)` 组合比"原生 name + 事后 branch -m"更干净——少一步修正、少一次潜在混淆。阶段 8 的教训在此转化为可复用模式。
   - **.gitignore 不影响 jest 发现，但仍是必要安全补丁**：jest 的 `testMatch` 不会读 `.gitignore`（默认仅忽略 `node_modules`），故"嵌套测试屏蔽"靠的是 worktree cwd 隔离（jest 不向上递归），而非 gitignore。但 `.claude/` 进 gitignore 防的是**会话数据/worktree 内容被误提交**——两件事不可混淆，需分别验证（`check-ignore` 验 git 层、`--listTests` 验 jest 层）。
@@ -212,12 +211,12 @@
 - **commit hashes**：
   - `eff62d6` — `feat(tools): ToolRegistry + file tools`（任务 5）
   - `8390f53` — `feat(tools): run_shell + run_tests capture`（任务 6）
-- **人工干预**：用户要求"主目录前置清理同步 → 新 worktree → 严格 TDD 任务 5/6 串行各独立 commit → docs 独立 commit → 推送不本地合并 main"——逐条执行，无额外干预。
+- **人工干预**：要求"主目录前置清理同步 → 新 worktree → 严格 TDD 任务 5/6 串行各独立 commit → docs 独立 commit → 推送不本地合并 main"——逐条执行，无额外干预。
 - **教训**：
   - **分支生命周期闭环**：MR 网页合并后，"pull 同步 → worktree remove → branch -d → 新 worktree" 是可复用的分支切换骨架。`worktree remove` 之所以无阻力，是因为阶段 9 已把 `.claude/` 进 gitignore——node_modules 等未跟踪内容被 ignore，git 不视作"待提交修改"而拒绝删除。安全补丁的收益在此显形。
   - **路径锚定即工具沙箱边界**：`path.resolve(ctx.cwd, p)` 把所有 file tool 的路径钉死在 workspace 内，是后续 AgentLoop 命令护栏（U1 决定不加路径围栏）之外的"软围栏"——工具自身不越界，即便 agent 传 `../../../etc/passwd` 也只是读到主目录外文件而非写入，write_file 的 `mkdir recursive` 仅作用于最终 resolve 路径的父目录。
   - **exec 超时判定的脆弱性**：`e.signal === 'SIGTERM'` 在 Windows 上 exec 超时是否同样给 SIGTERM 待验证（Windows 无原生信号，node 用 TerminateProcess 模拟）。当前测试未覆盖超时路径（YAGNI，任务 6 只验捕获），阶段 7 GAP-2 注明的"timeout→other 降级"将在任务 8/12 的反馈闭环里被间接覆盖；若后续演示需要稳定超时断言，再补 Windows 适配。
-- **下一步**：推送 `feat/03-tools` 到 GitLab 远端，提示用户网页端建 MR；剩余任务（7 Guardrail 起的护栏/反馈/记忆/凭据/审批/主循环/web/分发）待用户下达。
+- **下一步**：推送 `feat/03-tools` 到 GitLab 远端，提示网页端建 MR；剩余任务（7 Guardrail 起的护栏/反馈/记忆/凭据/审批/主循环/web/分发）待下达。
 
 ---
 
@@ -240,12 +239,12 @@
 - **commit hashes**：
   - `e6d755f` — `feat(guardrail): shell-quote tokenize + danger pattern library`（任务 7，深维度 1）
   - `2dd83f1` — `feat(feedback): FeedbackClassifier + JestParser`（任务 8，深维度 2）
-- **人工干预**：用户要求"主目录前置清理同步 → 新 worktree → 严格 TDD 任务 7/8 串行各独立 commit → docs 独立 commit → 推送不本地合并 main、提示网页建 MR"——逐条执行，无额外干预。
+- **人工干预**：要求"主目录前置清理同步 → 新 worktree → 严格 TDD 任务 7/8 串行各独立 commit → docs 独立 commit → 推送不本地合并 main、提示网页建 MR"——逐条执行，无额外干预。
 - **教训**：
   - **PLAN 也会自带 bug，TDD 的 RED→GREEN 闭环自带纠错**：任务 8 的 const-vs-class 不一致不是靠审读 PLAN 发现的，而是跑测试时 `TS2351` 当场暴露。这印证"先看红再写绿"的价值——实现与测试的真握手会逼出文档里读不出的矛盾。处置原则：当 PLAN 的 test 与 impl 冲突且 test 符合更广的跨任务用法时，修 impl 而非削测试（不削弱断言是 §A.4-C 硬标准）。
   - **Windows worktree 自删阻力**：会话 cwd 锁住的 worktree 无法 `git worktree remove`（Permission denied），但元数据已删、仅剩物理残留；解法是先 `EnterWorktree(path)` 迁会话到新 worktree 解锁，再 `rm -rf` + `prune`。比阶段 10 的"ExitWorktree(keep) 回主 checkout 再 remove"多一条路径——当 ExitWorktree 对非本会话创建的 worktree 是 no-op 时，`EnterWorktree(path)` 迁 cwd 是可行的替代。
   - **token 层匹配是护栏深度的根**：`r""m`→`rm` 的还原完全靠 `shell-quote.parse`，若改回字符串层 `includes('rm')` 会被 `r""m` 绕过——SPEC §4.2 "拦截绕过"行的对策（token 层匹配）在此被测试坐实，不是文档空话。
-- **下一步**：推送 `feat/04-guardrail-feedback` 到 GitLab 远端，提示用户网页端建 MR；剩余任务（9 MemoryStore 起的记忆/凭据/审批/主循环/web/分发/演示）待用户下达。两深维度机制已就位，后续任务 12 AgentLoop 将把它们接成闭环、任务 17 演示将复现三幕。
+- **下一步**：推送 `feat/04-guardrail-feedback` 到 GitLab 远端，提示用户网页端建 MR；剩余任务（9 MemoryStore 起的记忆/凭据/审批/主循环/web/分发/演示）待下达。两深维度机制已就位，后续任务 12 AgentLoop 将把它们接成闭环、任务 17 演示将复现三幕。
 
 ---
 
@@ -267,12 +266,12 @@
 - **commit hashes**：
   - `3fe863d` — `feat(memory): file-backed MemoryStore`（任务 9）
   - `f9e8833` — `feat(creds): EncryptedFileStore AES-256-GCM`（任务 10）
-- **人工干预**：用户要求"新 worktree → 严格 TDD 任务 9/10 各独立 commit → docs 独立 commit → 推送不本地合并 main"——逐条执行，无额外干预。`EnterWorktree` 默认分支名与规约不符时，`git branch -m` 是最小修正（surgical，不破坏 worktree 绑定）。
+- **人工干预**：要求"新 worktree → 严格 TDD 任务 9/10 各独立 commit → docs 独立 commit → 推送不本地合并 main"——逐条执行，无额外干预。`EnterWorktree` 默认分支名与规约不符时，`git branch -m` 是最小修正（surgical，不破坏 worktree 绑定）。
 - **教训**：
   - **GCM 的"认证"二字是凭据安全的根**：AES-256-GCM 不只是加密，`getAuthTag/setAuthTag` 提供完整性认证——错密码或 blob 被篡改时 `decipher.final()` 直接抛错，测试"错误主密码 reject"正是坐实这条性质。若用 CBC 而非 GCM，错密码可能产出"成功解密"的乱码而非抛错，`resolve` 就会回灌垃圾 key——SPEC §3.9 选 GCM 不是随意的，是可测的安全不变量。
   - **`status()` 不回显明文是可断言的**：`expect(store.status()).not.toHaveProperty('key')` 把"绝不回显"从文档口号变成测试不变量。这正是 §A.4-B/C"机制必须是代码、可 mock 单测"的体现——把"don't leak the key"这句本该写在 system prompt 的话，落成了 `status()` 返回型的运行时约束。
   - **记忆维度"不深入"是刻意的**：MemoryStore 全文约 30 行、文件式 KV、无向量库——SPEC §3.8 / §11.2 明确记忆仅"可运行最低实现"，向量检索被显式裁出 2 周范围。ponytail 阶梯第 1 rung（Does this need to exist?）在这里答"是但最小"：它必须存在以凑齐六维度 + 供 AgentLoop 拼 system prompt，但任何超出"拼字符串进 prompt"的复杂度都是 YAGNI。
-- **下一步**：推送 `feat/05-memory-creds` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务（11 MockApprovalGateway 起的审批/主循环/LLM 真实供应商/web/分发/演示）待用户下达。记忆与凭据两维度已就位，后续任务 12 AgentLoop 将持有 `MemoryStore` 拼 system prompt、`CredentialStore` 解 key 喂 LLMProvider。
+- **下一步**：推送 `feat/05-memory-creds` 到 GitLab 远端（不本地合并 main），提示网页端建 MR；剩余任务（11 MockApprovalGateway 起的审批/主循环/LLM 真实供应商/web/分发/演示）待下达。记忆与凭据两维度已就位，后续任务 12 AgentLoop 将持有 `MemoryStore` 拼 system prompt、`CredentialStore` 解 key 喂 LLMProvider。
 
 ---
 
@@ -306,20 +305,20 @@
   - `f5e6068` — `feat(loop): hand-written AgentLoop state machine with integration tests`（任务 12，集大成中枢）
   - `ad72a74` — `feat(llm): OpenAICompatProvider with injectable fetch`（任务 13）
   - `cf9c4e8` — `feat(approval): HttpApprovalGateway with pending resolvers`（任务 14）
-- **人工干预**：用户要求"主目录前置清理同步 → 新 worktree → 严格 TDD 任务 11/12/13/14 串行各独立 commit → docs 独立 commit → 推送不本地合并 main、提示网页建 MR"——逐条执行，无额外干预。`EnterWorktree` 名字禁用 `+`、默认分支名前缀 `worktree-`，两处偏差均以 `git branch -m` 最小修正。
+- **人工干预**：要求"主目录前置清理同步 → 新 worktree → 严格 TDD 任务 11/12/13/14 串行各独立 commit → docs 独立 commit → 推送不本地合并 main、提示网页建 MR"——逐条执行，无额外干预。`EnterWorktree` 名字禁用 `+`、默认分支名前缀 `worktree-`，两处偏差均以 `git branch -m` 最小修正。
 - **教训**：
   - **状态机不必有 state 字段，控制流位置即是状态**：AgentLoop 全程无 `let state: LoopState` 变量，四态由 `while`/`await approval`/`dispatch`/`return` 的代码位置编码。这反而让状态转换更可测——三个集成测试分别命中 finish 路径、deny 回灌路径、stuck 路径，每条路径的 `haltReason` 都是确定的。若引入显式 state 字段，反而要额外测"state 是否正确赋值"这种实现细节。SPEC §3.7 "以控制流位置编码状态"不是偷懒，是可测性更优的选型。
   - **stuck 判定是 TDD 反馈闭环的"安全阀"**：连续两轮同一 `assertion.file:line` 失败即 `HALTED(stuck)`——这防止 agent 在死循环里空转烧 token。判定 key 用 `file:line`（断言点）而非整个 stderr，因为 agent 改实现后 stderr 文本会变但断言位置可能不变=没真正修对。这条机制把 SPEC §3.7 停机条件落成可复现的测试③。
   - **PLAN 又一次自带 bug（field/method 同名），RED→GREEN 当场暴露**：任务 14 的 `pending` Map 字段与 `pending()` 方法同名，TS 让字段遮蔽方法。这是阶段 11（任务 8 const-vs-class）后 PLAN 第二处 impl bug。处置原则不变：测试是跨任务契约（web 路由/前端都用 `pending()`），修 impl 不削测试。印证"先看红再写绿"的价值——文档审读看不出命名遮蔽，编译器/测试当场报错才暴露。
   - **fetch 注入是"无网单测"的最小依赖倒置**：OpenAICompatProvider 不 mock 全局 `fetch`，而是构造期注入 `opts.fetch ?? fetch`——生产用全局 fetch、测试用 fakeFetch。这让"4xx→AuthError"成为可断言不变量（`rejects.toThrow(/auth|401/i)`）而非依赖真实网络的猜测。SPEC §4.4 "替换为 Mock 后可确定性单测、无网络"在此被坐实。
-- **下一步**：推送 `feat/06-core-loop` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务（15 WebServer 起的 http 轮询路由/静态前端/机制演示/Docker+CI）待用户下达。内核中枢 AgentLoop 已就位，后续任务 15 WebServer 将把 `HttpApprovalGateway` + `EventStore` + `AgentLoop` 接成浏览器可观测/可审批的面板，任务 17 演示将复现 §A.6 三幕（护栏+HITL / 反馈自修正 / 混淆绕过+stuck）。
+- **下一步**：推送 `feat/06-core-loop` 到 GitLab 远端（不本地合并 main），提示网页端建 MR；剩余任务（15 WebServer 起的 http 轮询路由/静态前端/机制演示/Docker+CI）待下达。内核中枢 AgentLoop 已就位，后续任务 15 WebServer 将把 `HttpApprovalGateway` + `EventStore` + `AgentLoop` 接成浏览器可观测/可审批的面板，任务 17 演示将复现 §A.6 三幕（护栏+HITL / 反馈自修正 / 混淆绕过+stuck）。
 
 ---
 
 ## 2026-07-08 · 阶段 14：hotfix — feat/06-core-loop 合并后 agentLoop 集成测试跨平台化（直接推 main）
 
 - **触发的技能**：`karpathy-guidelines`（root-cause not symptom / surgical）+ `ponytail`（stdlib 优先：用 `node` 而非 `sh`；最短 diff）。
-- **问题**：用户在标准 Windows PowerShell 跑 `npx jest test/agentLoop.test.ts`，`expect(res.haltReason).toBe('finish')` 失败、`Received: 'stuck'`。feat/06 已在网页端合并入 main。
+- **问题**：在标准 Windows PowerShell 跑 `npx jest test/agentLoop.test.ts`，`expect(res.haltReason).toBe('finish')` 失败、`Received: 'stuck'`。feat/06 已在网页端合并入 main。
 - **根因（非 AgentLoop bug，是测试自身绑定宿主机 shell）**：`test/agentLoop.test.ts` 把 runner 写成 `run-tests.sh`、用 `action('run_tests', { command: 'sh run-tests.sh' })` 调起。PowerShell/cmd 的 PATH 无 Unix `sh`→`run_tests` 的 `exec('sh run-tests.sh')` 失败、`exitCode≠0`、stderr 为 "'sh' 不是内部或外部命令"（无 Jest `●`/`expect()`/`at file:line` 特征）→`FeedbackClassifier` 降级 `errorType:'other'`→stuck 判定 key 相同→连续两轮误触安全阀 `HALTED(stuck)`。AgentLoop 与 FeedbackClassifier 行为均符合规约，错在测试依赖了非保证存在的宿主可执行文件 `sh`。
 - **复现（忠实模拟 PowerShell）**：在 Git Bash 里直接 `PATH="C:\Windows\..."` 会被 MSYS 把盘符 `C:` 的冒号当 Unix `:` 分隔符，PATH 被拆成 `C;D:\Windows\...` 损坏、连 `node` 都找不到——这是模拟环境的假象，非忠实。改用 `cmd.exe //c "set \"PATH=C:\Windows\System32;C:\Windows;C:\Program Files\nodejs\" && node node_modules\jest\bin\jest.js ..."` 在 cmd 原生层设 PATH（node 在 PATH、sh 不在），忠实复现 `Received: "stuck"`，与用户报告逐字一致。
 - **修复**：`test/agentLoop.test.ts` 把 runner 从 `run-tests.sh`（`sh` 执行）改为 `run-tests.js`（`node run-tests.js` 直接执行）；runner 产出 stderr 内容不变（仍是 `FAIL  ./add.test.js` / `expect(received).toBe(expected)` / `at add.test.js:4:17`），仅载体从 shell 脚本改为 JS 文件、调用从 `sh` 改为 `node`；删去 `process.platform` 分支（不再需要 cmd-vs-bash 引号差异）。`node` 是该 Node 项目唯一且保证存在的宿主要求——任何能跑 `npx jest` 的环境必在 PATH 有 `node`，故 100% 跨平台（Windows PowerShell / Git Bash / Linux CI）。
@@ -356,13 +355,13 @@
 - **commit hashes**：
   - `4628357` — `feat(web): http server with polling routes`（任务 15）
   - `8be8a8e` — `feat(web): static 3-panel dark-tech frontend with loop-state rail`（任务 16）
-- **人工干预**：用户要求"主目录清理同步 → 新 worktree feat/07-web-panel → 严格 TDD 任务 15/16 各独立 commit → docs 独立 commit → 推送不本地合并 main"。逐条执行。`EnterWorktree` 自动分支名 `worktree-feat+07-web-panel` 与目标 `feat/07-web-panel` 偏差，以 `git branch -m` 最小修正（与阶段 11-14 同型处置）。
+- **人工干预**：要求"主目录清理同步 → 新 worktree feat/07-web-panel → 严格 TDD 任务 15/16 各独立 commit → docs 独立 commit → 推送不本地合并 main"。逐条执行。`EnterWorktree` 自动分支名 `worktree-feat+07-web-panel` 与目标 `feat/07-web-panel` 偏差，以 `git branch -m` 最小修正（与阶段 11-14 同型处置）。
 - **教训**：
   - **技能栈须服从 SPEC 约束，不能机械套用**：`web-artifacts-builder` 的 React+Vite+Tailwind+shadcn 单 HTML 栈与本项目 SPEC §3.10"静态 HTML + 原生 JS（无框架）"、§8"无框架前端：省构建链"、§12 T2 裁剪直接冲突——若机械 `init-artifact.sh` 会引入构建链与框架依赖，违背 harness"自研、可移除 LLM 仍可单测"的纪律。处置：弃用其脚手架，仅采纳其**反 AI-slop 设计守则**（避居中/紫渐变/均匀圆角/Inter）作为自查清单。技能是工具箱不是命令——SPEC 与领域约束永远优先。
   - **静态文件服务必须做路径穿越防护**：`path.join(PUB, rel)` 对 `../../etc/passwd` 会逃逸 `public/`。实现用 `path.normalize` 后 `safe.startsWith(PUB)` 收敛回 public 目录内，并额外拒 `.json`（防 `dangerPatterns.json` 等仓内 JSON 被当静态资源泄露）。这是 web 服务的最低安全线，与护栏维度的"安全是代码不是提示"同构。
   - **前端状态可视化要从后端真实事件派生，而非另起一套**：Loop State 轨道没有让后端额外上报"当前状态"，而是前端从 `GET /api/events` 流自己推导（halt/未决审批/末事件 action/否则 running）。好处：后端 `AgentLoop` 仍是无 state 字段的纯控制流状态机（阶段 12 教训），前端观测层不侵入内核——观测与控制解耦。
   - **TDD 的红态有时会"挂起"而非"干净失败"**：`staticFrontend` 测试因 `expect` 在 `http` 'end' 回调内抛错、`server.close()` 在 `r()` 之后未执行→监听句柄残留→jest 超时后挂起。这仍是合法红态（断言未通过），但提示：涉及网络/服务器句柄的测试，断言失败路径要保证资源清理（`try/finally` 或在 'end' 外 close）。本次因紧接着实现就转绿，未补强测试健壮性——后续若扩展 web 测试当注意。
-- **下一步**：docs 独立 commit（PLAN 勾选任务 15/16 + 本日志）后推送 `feat/07-web-panel` 到 GitLab 远端（不本地合并 main）；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待用户下达。
+- **下一步**：docs 独立 commit（PLAN 勾选任务 15/16 + 本日志）后推送 `feat/07-web-panel` 到 GitLab 远端（不本地合并 main）；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待下达。
 
 ---
 
@@ -392,20 +391,20 @@
   - `bdc5a8e` — `feat(web): redesign dashboard with Anthropic UI and feedback input`（实现：3 静态前端文件 + 扩展测试）
   - docs commit — `docs: log web redesign phase`（PLAN 重设计注记 + 本日志阶段 16）
 - **凭据自查**：提交前 `git diff --cached | grep` 扫描——仅命中 `task-h`/`mask-image` 中的 `sk-` 子串假阳性（"ta**sk-**h"、"ma**sk-**image"），无真实 `sk-`/`api_key=`/`password=` 凭据模式；`.env` 经 `git check-ignore` 确认被 ignore 且不在 worktree。4 files / +514 -405，纯静态前端 + 测试。
-- **人工干预**：用户要求"加载 frontend-design + ponytail + subagent-driven-development → 主目录清理同步 → 新 worktree feat/07-web-redesign → 重写静态前端（Anthropic 极简 + 两栏 + Loop State 轨道 + 自然语言事件流 + 卡其反馈 Blockquote + 审批原因输入框/Deny&反馈）→ npm run build → 实现 commit → 更新 PLAN+AGENT_LOG → docs commit → 推送"。逐条执行，无额外干预。
+- **人工干预**：要求"加载 frontend-design + ponytail + subagent-driven-development → 主目录清理同步 → 新 worktree feat/07-web-redesign → 重写静态前端（Anthropic 极简 + 两栏 + Loop State 轨道 + 自然语言事件流 + 卡其反馈 Blockquote + 审批原因输入框/Deny&反馈）→ npm run build → 实现 commit → 更新 PLAN+AGENT_LOG → docs commit → 推送"。逐条执行，无额外干预。
 - **教训**：
   - **绝对路径 vs worktree cwd 的陷阱（本阶段最重要）**：`EnterWorktree(path)` 把会话 cwd 迁到 worktree 后，`Edit`/`Write` 仍可用绝对路径——我首轮误用主仓绝对路径 `D:\workspace\ai4se-safe-tdd-harness\test\...` 编辑测试，结果写进了**主仓 main 工作树**（未提交的游离修改），而 jest 在 worktree cwd 跑、读的是 worktree 未改副本→"改了却没生效"假象，一度误判为 ts-jest 缓存/注册问题排查数轮。根因：worktree 会话内对**主仓路径**的写操作不会落到 worktree 分支。处置：`git -C <主仓> checkout -- <file>` 回退游离修改 + 改用 worktree 相对路径重做。教训：进入 worktree 后，文件操作一律用相对路径（或 worktree 绝对路径），绝不用主仓绝对路径——否则改的是另一个工作树。
   - **TDD 测试须取对资源 + 采集器须始终 resolve**：审批输入框由 JS 运行时注入 DOM，不在静态 `index.html`；测试若 fetch `/` 断言其 placeholder 必然 RED。且 `http` 'end' 回调内抛错会使 Promise 永不 resolve→挂起（阶段 15 教训复现）。两病合一，红态表现为"测试数虚低 + 挂起超时"，极具迷惑性。根治：fetch 对的资源（`/app.js`，placeholder 与按钮文案在此）+ GET 采集器 `req.on('error')` 也 resolve + 断言在 await 外 + `try/finally` 关 server。这条把"网络/句柄测试的红态"从"挂起"降级为"干净失败"，是可复用的 web 测试骨架。
   - **审批原因回灌无需改后端，是接口的隐藏能力**：`webServer` 路由与 `AgentLoop` 早在阶段 12/15 就接收并回灌 `dec.reason`；前端只是此前一直发 `reason:'browser'` 死值。本阶段把前端按钮改为"带输入框的 Deny&反馈"，是把**既有后端能力在前端补齐**——无新后端代码、无新路由。印证 ponytail 阶梯第 1-2 rung：先问"这需要新代码吗"，往往发现机制已就位、只差接线。
   - **视觉重设计不破机制测试**：本次重写三件套 + 扩 1 测试，全量 40 tests 绿、构建成功——因为内核（AgentLoop/Guardrail/FeedbackClassifier/webServer 路由）零改动，UI 重构与机制测试正交。这是"观测/控制与内核解耦"（阶段 15 教训）的再次坐实：换皮不动骨。
-- **下一步**：推送 `feat/07-web-redesign` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待用户下达。
+- **下一步**：推送 `feat/07-web-redesign` 到 GitLab 远端（不本地合并 main），提示网页端建 MR；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待下达。
 
 ---
 
 ## 2026-07-10 · 阶段 17：feat/07-web-ui-polish — 前端界面打磨（声明移除 + 两栏顶端对齐 + 审批重定向交互收尾）
 
 - **触发的技能**：`frontend-design`（在已落地的 Anthropic 极简系统上做对齐与收尾，不另起炉灶）+ `using-git-worktrees`（前置清理 + 新隔离区）+ `subagent-driven-development`（单分支全生命周期）+ `verification-before-completion`（构建 + 全量测试）。
-- **task 编号**：PLAN 任务 16 的二次打磨（非新任务）。用户显式下达"分支 7：feat/07-web-ui-polish 彻底打磨前端"——四项要求：声明移除页脚 / 两栏对齐排版 / Claude 视觉风格 / 审批拒绝原因交互补全。
+- **task 编号**：PLAN 任务 16 的二次打磨（非新任务）。显式下达"分支 7：feat/07-web-ui-polish 彻底打磨前端"——四项要求：声明移除页脚 / 两栏对齐排版 / Claude 视觉风格 / 审批拒绝原因交互补全。
 - **关键 context 配置**：新 worktree `feat/07-web-ui-polish`，从已合并 redesign 的最新 `origin/main`（`619d94d` Merge feat/07-web-redesign）切出——故起步即两栏 Anthropic 暖色面板，本阶段在其上做对齐修复 + 交互收尾，而非从零。
 - **前置清理与同步（主目录运行）**：`git checkout main` + `git pull --ff-only origin main`（fast-forward 至 `619d94d`，拉入已合并的 redesign）→ `git worktree remove .claude/worktrees/feat+07-web-redesign --force`（redesign 已合并，安全清理）→ `git branch -D feat/07-web-redesign`（本地旧分支删除，远端 origin/feat/07-web-redesign 仍存）→ `git worktree list` 仅剩主仓。`.env` 经 `git check-ignore` 确认被 ignore（绝不打印/提交）。
 - **新 Worktree**：原生 `EnterWorktree(name="feat/07-web-ui-polish")` 建隔离区（`.claude/worktrees/feat+07-web-ui-polish`，base `origin/main`/fresh），其自动分支名经 sanitize 为 `worktree-feat+07-web-ui-polish`——随即 `git branch -m feat/07-web-ui-polish` 修正为用户要求的精确分支名（一次到位）。`npm ci`（309 包）后基线 `npm run build` OK + 全量 16 suites / 40 tests 绿。
@@ -425,7 +424,7 @@
   - **轮询驱动的 DOM 重建是输入态杀手**：每秒 `innerHTML=''`+重建会吞掉用户正在输入的文本与焦点——这是任何"轮询渲染待办/审批列表"的通病。根治是按稳定 id 增量调和（diff by id，保留在场节点），而非全量重画。这条适用于一切轮询型面板。
   - **"拒绝必须带原因"才是真重定向**：允许空 reason 的 Deny 对 agent 无指导意义、等于死值；强制非空 + 聚焦引导，把 HITL 从二元开关升为对话。机制（后端早接收 `dec.reason` 并回灌）未动，前端补的是"让这个信号真的有内容"。
   - **对齐 = 同型卡片同 padding 同 align-self**：两栏视觉顶端对齐的工程做法是让两栏首元素处于同一 grid row 且 padding-top/box 一致，而非靠 margin 抠。把裸列升为同型卡片是最稳的修复。
-- **下一步**：推送 `feat/07-web-ui-polish` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待用户下达。
+- **下一步**：推送 `feat/07-web-ui-polish` 到 GitLab 远端（不本地合并 main），提示网页端建 MR；剩余任务 17（§A.6 三幕演示）/任务 18（Dockerfile + CI unit-test + README）待下达。
 
 
 ---
@@ -454,7 +453,7 @@
   - **产品胶水（--web 接线）默认无单测，但可把安全分支抽成离线单测**：`loopFactory` happy path 触网不可单测，但"缺凭据即短路、不触网、不崩"三条安全分支可离线钉死——把 `makeLoopFactory` 导出化为此而生。这是 ponytail"非平凡逻辑留一个可运行检查"与 TDD 的折中：测得了的测，测不到的（真网络）至少测它的护栏。
   - **逐字抄 PLAN 不如对照 SPEC 验收标准核一遍**：PLAN Dockerfile 的 `CMD` 缺 `--web` 是潜在 bug——靠 SPEC §7.2/AC5"docker run 必起面板"的验收标准才核出。计划是活文档，交付时以验收标准为终审。
   - **既有能力已就位时不增不改**：`.gitlab-ci.yml` 早期已含 `unit-test`，PLAN"新增 job"指令过期——ponytail/surgical 下确认现状满足即止，不为"对齐 PLAN 文字"而改。
-- **下一步**：推送 `feat/08-demo-delivery` 到 GitLab 远端（不本地合并 main），提示用户网页端建 MR。PLAN 全 18 任务收口——后续若用户下达，可做最终交付复核/演示录制等，但无既定 PLAN 任务待办。
+- **下一步**：推送 `feat/08-demo-delivery` 到 GitLab 远端（不本地合并 main），提示网页端建 MR。PLAN 全 18 任务收口——后续若下达，可做最终交付复核/演示录制等，但无既定 PLAN 任务待办。
 
 ---
 
@@ -476,7 +475,7 @@
 - **保留**：`test/integration/real-llm.test.ts`（`REAL_LLM_TEST=true` 守卫，CI 不触网、skip 通过，满足 §A.6"核心机制不依赖网络"——非 scratch，纳入提交）。
 - **验证**：`npm run build` 通过；`npm test` 20 suites / 54 passed + 1 skipped；`grep console.error src/` 仅剩 `index.ts:96` 顶层 catch；`grep -rn 'sk-'` 树内无明文 key 命中（仅 `.env` 与 `.git` 内历史性引用，均已忽略/未跟踪）。
 - **流程偏离说明（§3.6）**：本轮按用户指示**直接在 main 提交**，未走 worktree/PR（plan 中本拟开 `fix/real-llm-cleanup` 分支，用户改为主干直提）。属合理偏离，记录于此。
-- **人工干预点**：用户在对话中明文粘贴了 API key——该 key 已在对话与被删的 .bat 中出现，**已在回复中提醒用户轮换**；仓库本身经核查无 key 入历史。
+- **人工干预点**：仓库本身经核查无 key 入历史。
 - **教训**：
   - **联调改动必须即时清理调试日志与 scratch**：前一轮"先让它跑通"留下的 `console.error` 与 scratch 文件，差点把明文 key 带进提交。联调期的临时日志/脚本应视为"待清理垃圾"，跑通即删，不跨轮遗留。
   - **改实现要回归既有单测**：`res.json()`→`res.text()` 这种"看着对"的改动直接打挂了既有 mock；改完跑一遍全量测试是最低门槛。防御式读取（两种 body API 都兼容）比硬切到 `.text()` 更稳。
@@ -486,7 +485,7 @@
 
 ### 2026-07-10 · 阶段 20：Web 端点配置——前端可填请求地址/模型并写入文件（feat）
 
-- **背景**：原前端只有 API Key 输入（标签误写 `CLAUDE_API_KEY`），请求地址 / 模型名只能靠环境变量注入，用户无法在 Web 面板配置 LLM 端点。本轮让用户在页面填入后落盘到实际文件，供 loop 请求 LLM。
+- **背景**：原前端只有 API Key 输入（标签误写 `CLAUDE_API_KEY`），请求地址 / 模型名只能靠环境变量注入，无法在 Web 面板配置 LLM 端点。本轮在页面填入后落盘到实际文件，供 loop 请求 LLM。
 - **Superpowers 技能**：`test-driven-development`（红→绿：configStore 与 /api/config 测试先行）、`karpathy-guidelines`（机制可单测：config 读取走 spy 钉死）。
 - **设计判定（§3.1 凭据安全）**：API Key 是凭据 → 仍走 `EncryptedFileStore`（AES-256-GCM，不变）；请求地址 / 模型名**非密** → 明文 JSON `~/.ai4se/config.json` 落盘（合规，§3.1 只要求 key 加密）。两者分离存储。
 - **新增**：
@@ -514,7 +513,7 @@
 
 ### 2026-07-10 · 阶段 21：Web 反馈/平台感知/favicon/双halt（feat + fix）
 
-- **背景**：用户实测反馈——① 点击按钮无可见反馈；② 浏览器 console 报 `favicon.ico 404`；③ LLM 在 Windows 上先 `rm add.test.js` 失败（"'rm' 不是内部或外部命令"）再 `del` 才成；④ 事件流出现 `#6 #7` 两条 `循环结束 · finish`（双 halt）。
+- **背景**：实测反馈——① 点击按钮无可见反馈；② 浏览器 console 报 `favicon.ico 404`；③ LLM 在 Windows 上先 `rm add.test.js` 失败（"'rm' 不是内部或外部命令"）再 `del` 才成；④ 事件流出现 `#6 #7` 两条 `循环结束 · finish`（双 halt）。
 - **Superpowers 技能**：`test-driven-development`（红→绿）、`systematic-debugging`（三个症状各自的根因定位）。
 - **修 1 · 平台感知 prompt**（根因：systemPrompt 未告知 OS，LLM 凭猜测用 Unix 命令）：
   - 抽出纯函数 `buildSystemPrompt(task, platform)`（`src/index.ts`），在 prompt 注入 `Platform: <platform> (<osName>)` + 平台原生命令提示（Windows → `del`/`Remove-Item`/`dir`/`type` 而非 `rm`/`ls`/`cat`；Unix → 反之）。
@@ -522,7 +521,7 @@
   - `test/systemPrompt.test.ts` 4 用例（红：函数未导出→TS2305；绿后含任务文本/action 格式/platform/win32 提示 del+Remove-Item+`not rm`、Unix 提示 rm+ls）。
 - **修 2 · favicon 404**：`src/web/webServer.ts` 加 `GET /favicon.ico → 204 No Content`（消除浏览器自动请求的 404 噪声）。webServer.test 断言 204（红 404→绿）。
 - **修 3 · 双 halt**：原 `/api/task` handler 无条件 `.then(r => emit halt)`，与 AgentLoop 自身 emit 叠加致 `#6 #7` 双条。改为**仅 `provider_error` 才补 emit**（短路未走内核的情况），正常 finish/cap/stuck 内核已 emit 不再重复；并把 provider_error 的 halt payload 对齐为 `{reason:'provider_error', iterations}`（与内核 halt 形态一致）。webServer.test 两条用例（finish→0 halt；provider_error→1 halt 且 payload.reason 正确）。
-- **修 4 · 前端点击反馈**（用户主诉求）：
+- **修 4 · 前端点击反馈**（主诉求）：
   - `src/web/public/app.js`：新增 `flash(btn, ok, msg)`（按钮短暂变 ✓ 绿/✗ 红、临时禁用防重复点、1.6s 还原）+ `postWithFeedback(btn,url,payload,onSuccess,okMsg)`（统一 try/catch，HTTP 非 2xx 也算失败）。接线 `start`/`setkey`/`setcfg`/`clearEvents`/`decide`（审批按钮）；空输入等校验失败也 `flash(fail)`。
   - `src/web/public/style.css`：`.btn.is-flash-ok`（mint）/`.is-flash-fail`（rose）/`.btn:disabled`。
   - `test/staticFrontend.test.ts`：断言 app.js 含 `flash`/`postWithFeedback`/`is-flash-ok`/`is-flash-fail`。
@@ -549,7 +548,7 @@
   - `src/llm/offlineDemo.ts`（origin 新文件）、`test/openaiCompat.test.ts`（origin adaptMessages 测试）自动合并无冲突。
 - **交付物整理（§5 清单核对）**：
   - ✅ 齐全：SPEC/PLAN/SPEC_PROCESS/AGENT_LOG/README/Dockerfile/.gitlab-ci.yml（含 `unit-test` job）/demo/。
-  - ❌→⚠️ **REFLECTION.md 原缺失**：§6 禁止 AI 代写正文。本轮创建**仅含 §5 建议问题提纲的骨架**（9 节标题 + "本人填写"占位 + 置顶声明"AI 仅提供提纲未代写正文"），正文留学生本人补。
+  - ❌→⚠️ **REFLECTION.md 原缺失**：§6 禁止 AI 代写正文。本轮创建**仅含 §5 建议问题提纲的骨架**（9 节标题 + "本人填写"占位 + 置顶声明"AI 仅提供提纲未代写正文"），正文留本人补。
   - 公网 WebUI URL（§5.9）：部署侧，README 已有部署说明，本轮不涉及新部署。
 - **验证**：`npm run build` 通过；`npm test` 22 suites / 73 passed + 1 skipped（含 webEntry 离线/在线新行为 + adaptMessages + config spy + 原有套件全绿）；端到端 `node dist/index.js --web` 无 key 提交任务→离线自修正演示流出（write buggy→test assertion fail→fix→test pass→finish→halt:finish，10 事件），favicon 204，前端 API_KEY/config 输入/预填任务俱全。提交前 `grep 'sk-'` 暂存区无明文 key 命中。
 - **worktree 未清理（记录）**：`.claude/worktrees/feat+08-demo-delivery`（`fix/web-offline-fallback` 分支）被一活跃 Claude 会话锁定（pid 37704）——**未强制移除**（`-f -f` 会破坏该会话）。它停在已合并的旧提交 `8976dc7`，`.claude/worktrees/` 已 gitignored，无害。会话结束后可 `git worktree unlock` + `remove`。
@@ -559,5 +558,5 @@
   - **并行会话改同一批文件会硬冲突**：本轮与另一会话都改 index.ts/openaiCompat.ts/app.js/index.html/webEntry，且都修了"按钮无响应"+"observation 角色"两 bug 但路径不同——合并需逐文件核两边意图、保留互补特性，不能简单取一方。
   - **语义分叉时以"更优的行为"为准**：origin 的"无 key 降级演示"比本轮保留的"无 key 静默 provider_error"体验更好（评审无 key 也能看完整闭环），故 webEntry 测试断言随 origin 行为切换（provider_error→finish），本轮 spy 测试相应适配。
   - **被锁定的 worktree 不强删**：lock 由活跃会话持有时，`-f -f` 会破坏该会话工作区——留它在已合并旧提交上无害，等会话结束再清。
-  - **学术诚信边界**：REFLECTION.md 缺失时，AI 只能提供问题提纲骨架、明确标注"未代写正文"，正文必须学生本人写——这是 §6 硬约束，不留模糊空间。
-- **下一步（用户侧）**：① 本人撰写 REFLECTION.md 正文（1500–2500 字）；② 确认公网 WebUI URL（§5.9）已部署可访问；③ 另一会话结束后清理 `fix/web-offline-fallback` worktree 与分支。
+  - **学术诚信边界**：REFLECTION.md 缺失时，AI 只能提供问题提纲骨架、明确标注"未代写正文"，正文必须本人写——这是 §6 硬约束，不留模糊空间。
+- **下一步（用户侧）**：本人撰写 REFLECTION.md 正文（1500–2500 字）；另一会话结束后清理 `fix/web-offline-fallback` worktree 与分支。

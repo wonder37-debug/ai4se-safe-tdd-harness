@@ -19,7 +19,7 @@
 - 凭据：绝不硬编码/提交/记日志；AES-256-GCM 加密文件 + 主密码；`.env` 仅作带告警的 fallback；`status()` 绝不回显明文（SPEC §3.9 / §4.2）。
 - 分发：仅 Docker（T1 裁剪）；`docker run -p 8080:8080` 必须能起 web 面板（SPEC §7.2）。
 - CI：`.gitlab-ci.yml` 必须含名为 `unit-test` 的 job（SPEC §五 item 6）。
-- 2 周裁剪生效：HTTP 轮询（无 WebSocket）、错误分类 3 类（`assertion`/`syntax`/`other`）、按里程碑开 worktree、单任务并发（SPEC §12）。
+- 执行约束：HTTP 轮询（无 WebSocket）、错误分类 3 类（`assertion`/`syntax`/`other`）、按里程碑开 worktree、单任务并发（SPEC §12）。
 - 仓库内不得出现真实凭据；`.env` 已被 gitignore 且必须保持未跟踪。
 
 ---

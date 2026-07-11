@@ -173,9 +173,9 @@ AgentLoop (自研主循环)
 
 ## 已知限制
 
-- 单任务，不并发（2 周裁剪，SPEC §3.10）。
+- 单任务，不并发。
 - HTTP 轮询而非 WebSocket；`FeedbackClassifier` 稳健识别 Jest 的 `assertion`/`syntax`，其它 runner 回退 `other`。
-- `OpenAICompatProvider` 仅适配单 OpenAI-compatible 供应商（`/v1/chat/completions`），不做多供应商适配。
+- `OpenAICompatProvider` 仅适配单 OpenAI-compatible 供应商（`/v1/chat/completions`）。
 
 ## CI
 
