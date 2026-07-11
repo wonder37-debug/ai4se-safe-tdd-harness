@@ -5,7 +5,7 @@
  *   1. 环境变量 REAL_LLM_TEST=true
  *   2. MASTER_PASSWORD 已设置
  *   3. API_BASE_URL 已设置
- *   4. ~/.ai4se/creds.enc 存在（或 CLAUDE_API_KEY 已设置）
+ *   4. ~/.ai4se/creds.enc 存在（或 API_KEY 已设置）
  *
  * 用法：
  *   REAL_LLM_TEST=true MASTER_PASSWORD=xxx API_BASE_URL=https://... npm test -- test/integration/real-llm.test.ts
@@ -67,10 +67,10 @@ async function makeRealProvider(): Promise<OpenAICompatProvider> {
     const store = new EncryptedFileStore(credsFile);
     const resolved = await store.resolve(MASTER);
     apiKey = resolved.key;
-  } else if (process.env.CLAUDE_API_KEY) {
-    apiKey = process.env.CLAUDE_API_KEY;
+  } else if (process.env.API_KEY) {
+    apiKey = process.env.API_KEY;
   } else {
-    throw new Error('凭据未配置：需要 ~/.ai4se/creds.enc 或 CLAUDE_API_KEY 环境变量');
+    throw new Error('凭据未配置：需要 ~/.ai4se/creds.enc 或 API_KEY 环境变量');
   }
 
   return new OpenAICompatProvider({ baseUrl: BASE_URL, apiKey, model: MODEL });
