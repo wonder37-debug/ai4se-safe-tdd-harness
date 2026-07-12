@@ -28,12 +28,11 @@ npm ci
 
 ## 运行
 
-### 1. 本地开发（无网络、无真实 LLM，确定性）
+### 1. 本地测试（无网络、无真实 LLM，确定性）
 
 ```bash
 npm test          # 全部单元测试（无网络，含 mock LLM 闭环）
 npm run demo      # §A.6 机制演示三幕
-npm run build && node dist/index.js --web   # 起本地面板
 ```
 
 `npm test` 与 `npm run demo` 均在无网络、无真实 LLM 下确定性通过——这是内核"移除 LLM 后仍可单测"的硬标准（SPEC §4.4 / §11.3）。
@@ -44,6 +43,7 @@ npm run build && node dist/index.js --web   # 起本地面板
 
 ```bash
 npm run build
+$env:MASTER_PASSWORD="<写入你的主密码>" # 注入主密码环境变量(Windows PowerShell写法)
 node dist/index.js --web          # 监听 $PORT，默认 8080
 ```
 
@@ -55,12 +55,17 @@ node dist/index.js --web          # 监听 $PORT，默认 8080
 | 请求地址 (`API_BASE_URL`) | `~/.ai4se/config.json` | **明文 JSON** | 非密，OpenAI 兼容端点，如 `https://api.openai.com/v1` |
 | 请求模型 (`MODEL`) | `~/.ai4se/config.json` | **明文 JSON** | 非密，按供应商填写，如 `gpt-4o-mini` |
 
-三者齐备（主密码 + 端点 + 可解密 key）即走在线 `OpenAICompatProvider`；任一缺失则降级离线 `ScriptedMock`，评审无 Key 也能在浏览器观看完整 TDD 自修正闭环。
+三者齐备（主密码 + 端点 + 可解密 key）即可使用在线 `OpenAICompatProvider`，在面板录入 `API_KEY` + 主密码保存（加密落盘），再填请求地址 / 模型后提交任务即可完成真实大模型Agent开发（点击启动循环后会有较大延迟，请耐心等待）；任一缺失则降级离线 `ScriptedMock`，无 Key 也能在浏览器观看完整 TDD 自修正闭环演示。
 
-### 3. 真实 LLM 集成测试（可选，需联网）
+### 3. 真实 LLM 集成测试（可选，需联网，可能出现超时情况）
 
 ```bash
-REAL_LLM_TEST=true MASTER_PASSWORD=<主密码> API_BASE_URL=https://api.openai.com/v1 npm test -- test/integration/real-llm.test.ts
+# 【Windows PowerShell】写法：
+$env:REAL_LLM_TEST="true"
+$env:MASTER_PASSWORD="你的主密码" # 自动解密 ~/.ai4se/creds.enc 里的 Key
+$env:API_BASE_URL="请求地址"
+$env:MODEL="请求模型" 
+npm test -- test/integration/real-llm.test.ts
 ```
 
 ## 分发命令
@@ -71,27 +76,26 @@ REAL_LLM_TEST=true MASTER_PASSWORD=<主密码> API_BASE_URL=https://api.openai.c
 
 ```bash
 docker build -t ai4se-safe-tdd-harness .
-docker run -p 8080:8080 \
-  -e MASTER_PASSWORD=<你的主密码> \
-  -v "$PWD/workspace":/workspace \
-  ai4se-safe-tdd-harness
+docker run -p 8080:8080 -e MASTER_PASSWORD=<你的主密码> -v "<物理工作区绝对路径>:/workspace" ai4se-safe-tdd-harness
 ```
 
-打开 http://localhost:8080 。容器启动即起 web 面板（`Dockerfile` 的 `CMD` 已带 `--web`）。在面板录入 `API_KEY` + 主密码保存（加密落盘），再填请求地址 / 模型后提交任务即可。
+启动容器后访问 http://localhost:8080。使用方式与本地开发一致（无key降级为机制演示；保存key后使用真实大模型）。在面板录入 `API_KEY` + 主密码保存（加密落盘），再填请求地址 / 模型后提交任务即可。（在 Web 面板输入的「工作区目录」必须固定填写为 /workspace，点击启动循环后会有较大延迟，请耐心等待）。
 
 > Docker 镜像基于 `node:20-bookworm-slim`（Linux）。Linux 直接 `docker build`；Windows / macOS 通过 Docker Desktop 构建（跨平台一致）。
 
 ### 路径 B：原生 Node（无需 Docker）
 
-适用于评审机未装 Docker 或需直接运行源码的场景：
+适用于机器未装 Docker 或需直接运行源码的场景：
 
 ```bash
 npm ci
 npm run build
+# 【Windows PowerShell】
+$env:MASTER_PASSWORD="<写入你的主密码>"
 node dist/index.js --web          # Linux / Windows 通用
 ```
 
-> 主密码经 `MASTER_PASSWORD` 环境变量传入（进 shell history 风险，仅本机调试用）；生产优先用面板录入 + 加密文件，禁止命令行明文传 key。
+> 主密码经 `MASTER_PASSWORD` 环境变量传入；生产优先用面板录入 + 加密文件。
 
 ## 目录结构
 
@@ -169,7 +173,7 @@ AgentLoop (自研主循环)
         └─ HttpApprovalGateway ── WebServer(http 轮询) ── 静态前端
 ```
 
-一轮迭代：组装 messages → `LLMProvider.complete` → `ActionProtocol.parse` → `Guardrail.assess`（high→HITL）→ `ToolRegistry.dispatch` → 若 `run_tests` 失败则 `FeedbackClassifier.parse` 回灌 → `finish`/上限/卡死 → `HALTED`。全程事件入队列供 `GET /api/events` 轮询。
+在一轮完整的系统迭代中，数据流运转逻辑如下：状态机首先组装历史上下文（Messages） → 呼叫 LLMProvider.complete 获取决策 → 通过 ActionProtocol.parse 提取动作 → 引入 Guardrail.assess 进行安全审计（high 等级进入 HITL 审批流） → 调用 ToolRegistry.dispatch 分发工具并物理执行。若工具为测试执行且返回非零退出，则由 FeedbackClassifier.parse 进行错误分类与断言定位，并结构化回灌进上下文。当遇到 finish 动作、卡死（stuck）或达到绝对迭代上限时，循环状态机熔断转入 HALTED。所有的系统事件均会被实时推送至内存事件队列，供前端面板轮询。
 
 ## 已知限制
 
