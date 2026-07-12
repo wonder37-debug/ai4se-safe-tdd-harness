@@ -49,3 +49,77 @@ test('complete sends adapted messages (no observation role) to fetch', async () 
   expect(captured.messages.every((m: any) => m.role !== 'observation')).toBe(true);
   expect(captured.messages[1]).toEqual({ role: 'user', content: 'Observation: oops' });
 });
+
+// ───────── 重试 / 退避（降低真实 LLM 排队抖动）─────────
+
+test('retries on 5xx then succeeds on next attempt', async () => {
+  let n = 0;
+  const fakeFetch = async () => {
+    n++;
+    if (n < 2) return { ok: false, status: 503, text: async () => 'busy' };
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'OK' } }] }) };
+  };
+  const p = new OpenAICompatProvider({ baseUrl: 'https://x', apiKey: 'k', fetch: fakeFetch as any, maxRetries: 3, baseDelayMs: 1 });
+  const r = await p.complete([{ role: 'user', content: 'hi' }]);
+  expect(r.text).toBe('OK');
+  expect(n).toBe(2);
+});
+
+test('retries on network error (fetch throws) then succeeds', async () => {
+  let n = 0;
+  const fakeFetch = async () => {
+    n++;
+    if (n < 2) throw new Error('ECONNRESET');
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'OK' } }] }) };
+  };
+  const p = new OpenAICompatProvider({ baseUrl: 'https://x', apiKey: 'k', fetch: fakeFetch as any, maxRetries: 3, baseDelayMs: 1 });
+  const r = await p.complete([{ role: 'user', content: 'hi' }]);
+  expect(r.text).toBe('OK');
+  expect(n).toBe(2);
+});
+
+test('429 is retryable and honors Retry-After', async () => {
+  let n = 0;
+  const fakeFetch = async () => {
+    n++;
+    if (n < 2) return { ok: false, status: 429, headers: { get: (h: string) => (h.toLowerCase() === 'retry-after' ? '0' : null) }, text: async () => 'rate' };
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'OK' } }] }) };
+  };
+  const p = new OpenAICompatProvider({ baseUrl: 'https://x', apiKey: 'k', fetch: fakeFetch as any, maxRetries: 3, baseDelayMs: 1 });
+  const r = await p.complete([{ role: 'user', content: 'hi' }]);
+  expect(r.text).toBe('OK');
+  expect(n).toBe(2);
+});
+
+test('4xx (non-429) does NOT retry — single attempt, AuthError', async () => {
+  let n = 0;
+  const fakeFetch = async () => { n++; return { ok: false, status: 401, text: async () => 'bad key' }; };
+  const p = new OpenAICompatProvider({ baseUrl: 'https://x', apiKey: 'k', fetch: fakeFetch as any, maxRetries: 3, baseDelayMs: 1 });
+  await expect(p.complete([{ role: 'user', content: 'hi' }])).rejects.toThrow(/auth|401/i);
+  expect(n).toBe(1);
+});
+
+test('exhausts retries on persistent 500 then throws', async () => {
+  let n = 0;
+  const fakeFetch = async () => { n++; return { ok: false, status: 500, text: async () => 'boom' }; };
+  const p = new OpenAICompatProvider({ baseUrl: 'https://x', apiKey: 'k', fetch: fakeFetch as any, maxRetries: 2, baseDelayMs: 1 });
+  await expect(p.complete([{ role: 'user', content: 'hi' }])).rejects.toThrow(/500|boom|provider/i);
+  expect(n).toBe(3); // initial attempt + 2 retries
+});
+
+test('timeout aborts hung request and retries', async () => {
+  let n = 0;
+  const fakeFetch = async (_url: string, init: any) => {
+    n++;
+    if (n < 2) {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+      });
+    }
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'OK' } }] }) };
+  };
+  const p = new OpenAICompatProvider({ baseUrl: 'https://x', apiKey: 'k', fetch: fakeFetch as any, maxRetries: 3, baseDelayMs: 1, timeoutMs: 50 });
+  const r = await p.complete([{ role: 'user', content: 'hi' }]);
+  expect(r.text).toBe('OK');
+  expect(n).toBe(2);
+});

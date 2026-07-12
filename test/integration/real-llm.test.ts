@@ -73,7 +73,12 @@ async function makeRealProvider(): Promise<OpenAICompatProvider> {
     throw new Error('凭据未配置：需要 ~/.ai4se/creds.enc 或 API_KEY 环境变量');
   }
 
-  return new OpenAICompatProvider({ baseUrl: BASE_URL, apiKey, model: MODEL });
+  return new OpenAICompatProvider({
+    baseUrl: BASE_URL, apiKey, model: MODEL,
+    // 重试/退避由默认值提供（429/5xx/网络抖动自动重试 3 次 + 指数退避）。
+    // 可选单请求硬超时：LLM_TIMEOUT_MS=90000 可在连接挂死时及时中断重试，避免吞掉整轮预算。
+    ...(process.env.LLM_TIMEOUT_MS ? { timeoutMs: Number(process.env.LLM_TIMEOUT_MS) } : {}),
+  });
 }
 
 // ───────── 测试用例 ─────────
