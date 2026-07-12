@@ -136,7 +136,7 @@ describe('真实 LLM — 完整 Agent 循环', () => {
     const testFile = path.join(cwd, 'add.test.js');
     const testExists = existsSync(testFile);
     console.log(`[真实 LLM] add.test.js 存在: ${testExists}`);
-  }, 120000); // 2 分钟超时
+  }, 600000); // 10 分钟超时：真实 LLM 多轮循环在网络排队下可能较慢
 
   test('机制 2：Guardrail 拦截危险命令', async () => {
     if (!RUN_REAL) return;
@@ -169,7 +169,7 @@ describe('真实 LLM — 完整 Agent 循环', () => {
     console.log(`[真实 LLM] 危险命令测试: reason=${result.haltReason}, iterations=${result.iterations}`);
     // Guardrail 应该拦截并触发审批或阻止
     // 由于 LLM 可能不服从指令，这个测试主要是观察日志
-  }, 120000);
+  }, 600000); // 10 分钟超时：真实 LLM 多轮循环在网络排队下可能较慢
 
   test('机制 3：Feedback 闭环 — 测试失败后修正', async () => {
     if (!RUN_REAL) return;
@@ -217,7 +217,7 @@ test('multiply 2*3 = 6', () => {
       const content = await fs.readFile(multFile, 'utf8');
       console.log(`[真实 LLM] multiply.js 内容: ${content.substring(0, 100)}...`);
     }
-  }, 180000); // 3 分钟超时
+  }, 600000); // 10 分钟超时：真实 LLM 多轮循环在网络排队下可能较慢
 
   test('机制 4：凭据状态与 API 连接', async () => {
     if (!RUN_REAL) return;
