@@ -12,6 +12,7 @@
 - **凭据治理** `EncryptedFileStore`：AES-256-GCM 加密落盘，`status()` 不回显明文；`JsonConfigStore` 以明文 JSON 存放非密的端点配置。
 - **面板解耦配置**：Web 面板可分别录入 `API_KEY`、请求地址（`API_BASE_URL`）、请求模型（`MODEL`），三者独立保存，无需改环境变量即可切换供应商。
 - **最小 Web 面板**：Node `http` 轮询（非 WS），浏览器内提交任务 + 实时事件流 + HITL 审批；无有效 Key 时自动降级离线 `ScriptedMock` 自修正演示。
+- **CLI 三模式**：`--web`（面板）/ `--task "<描述>"`（单次）/ `-i`（交互 REPL，默认）；终端内高危动作触发 `y/n/文本反馈` 悬停审批，反馈文本回灌重定向对话；凭据经 `creds.enc` → `.env` 兜底 → 离线 `ScriptedMock` 三级降级。
 - **Docker 分发**：`docker run -p 8080:8080` 一条命令起面板。
 
 ## 安装
@@ -57,7 +58,54 @@ node dist/index.js --web          # 监听 $PORT，默认 8080
 
 三者齐备（主密码 + 端点 + 可解密 key）即可使用在线 `OpenAICompatProvider`，在面板录入 `API_KEY` + 主密码保存（加密落盘），再填请求地址 / 模型后提交任务即可完成真实大模型Agent开发（点击启动循环后会有较大延迟，请耐心等待）；任一缺失则降级离线 `ScriptedMock`，无 Key 也能在浏览器观看完整 TDD 自修正闭环演示。
 
-### 3. 真实 LLM 集成测试（可选，需联网，可能出现超时情况）
+### 3. CLI 命令行模式（交互 REPL / 单次任务）
+
+除 Web 面板外，harness 同样可在终端直接驱动——适合脚本编排、CI 与无浏览器场景。三种模式：
+
+```bash
+npm run build
+
+# (a) 交互式 REPL（默认）：`harness > ` 循环提示符，连续下达自然语言任务
+node dist/index.js                     # 等价于 -i / --interactive
+node dist/index.js -i
+
+# (b) 单次任务：执行一次后退出
+node dist/index.js --task "实现一个 add(a,b) 函数并用测试验证"
+node dist/index.js --task "..." --cwd "<工作区绝对路径>"   # 指定工作目录
+node dist/index.js "实现 add"                            # 裸参数简写
+
+# (c) Web 面板（同 §2）
+node dist/index.js --web
+
+# 帮助
+node dist/index.js -h
+```
+
+**凭据与降级：** CLI 优先读 `~/.ai4se/creds.enc`（需设 `MASTER_PASSWORD` 环境变量解密）；`.env` 的 `API_KEY` / `API_BASE_URL` / `MODEL` 作明文兜底（带告警，SPEC §3.9）；三者均无时自动降级为离线 `ScriptedMock` 自修正演示——零配置即可在终端观看到完整的「写 buggy → 测试失败 → 修正 → 测试通过」闭环。
+
+```bash
+# 离线冒烟（无 Key，终端即跑）
+node dist/index.js --task "implement add" --cwd "<临时目录绝对路径>"
+# 期望输出：[done] haltReason=finish, iterations=5
+```
+
+**终端内 HITL 人工审批：** 当 agent 试图执行高危动作（如 `rm -rf /`，由 `Guardrail.assess` 判定 `high`），REPL 会在终端悬停并提示：
+
+```
+⚠️  高危动作待审批:
+  tool: run_shell
+  args: {"command":"rm -rf /"}
+  reasons: recursive-delete: recursive forced deletion
+[y] 批准 / [n] 拒绝 / 或输入文本反馈以重定向: 
+```
+
+- 输入 `y` / `yes` → 批准执行；
+- 输入 `n` / `no` → 拒绝；
+- 输入任意文本（如「请改用 trash 而非 rm」）→ 拒绝，**且该文本作为反馈回灌进对话**，agent 下一轮会看到这条拒绝原因并据此重定向——这是「治理拦截 + 反馈闭环」两条代码机制在终端的交汇点。
+
+REPL 任务完成后**不退出进程**，继续等待下一次指令，直到输入 `exit` 或 `quit`。
+
+### 4. 真实 LLM 集成测试（可选，需联网，可能出现超时情况）
 
 ```bash
 # 【Windows PowerShell】写法：
@@ -102,8 +150,9 @@ node dist/index.js --web          # Linux / Windows 通用
 ```
 ai4se-safe-tdd-harness/
 ├── src/
-│   ├── approval/          # HITL 审批网关：approvalGateway / httpApprovalGateway
-│   ├── creds/             # 凭据与配置：credentialStore(AES-256-GCM) / configStore(明文 JSON)
+│   ├── approval/          # HITL 审批网关：approvalGateway / httpApprovalGateway / cliApprovalGateway
+│   ├── cli/               # CLI 模式：args(参数解析) / envLoader(.env) / repl(交互会话)
+│   ├── creds/             # 凭据与配置：credentialStore(AES-256-GCM) / configStore(明文 JSON) / credResolver(凭据决议)
 │   ├── feedback/          # 反馈分类：feedbackClassifier + jestParser
 │   ├── guardrail/         # 治理护栏：guardrail + dangerPatterns（危险模式库）
 │   ├── llm/               # LLM 层：provider(接口) / openaiCompat(在线) / scriptedMock + offlineDemo(离线)
@@ -112,7 +161,7 @@ ai4se-safe-tdd-harness/
 │   ├── protocol/          # 动作协议：actionProtocol（LLM 输出解析）
 │   ├── tools/             # 工具分发：tool(注册表) / fileTools / shellTools
 │   ├── web/               # Web 面板：webServer(http 轮询) + public/(index.html/app.js/style.css)
-│   ├── index.ts           # 入口：buildSystemPrompt + makeLoopFactory + --web 启动
+│   ├── index.ts           # 入口：buildSystemPrompt + makeLoopFactory + CLI 三模式分发（--web / --task / -i）
 │   └── types.ts
 ├── test/                  # 单元测试（无网络，mock LLM）；integration/real-llm.test.ts 可选联网
 ├── demo/                  # §A.6 机制演示：mechanism-demo.test.ts + fixtures/
