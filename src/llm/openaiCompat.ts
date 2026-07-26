@@ -29,6 +29,14 @@ export function adaptMessages(messages: Message[]): { role: Role; content: strin
   );
 }
 
+// 防御性清洗 baseUrl：先剥末尾斜杠，再剥末尾 /v1，使调用方始终拼 /v1/chat/completions。
+// 兼容 https://.../v1、.../v1/、.../、... 四种写法及末尾多斜杠（/v1//）边界；
+// 杜绝 .../v1/v1 双重路径——曾因 config.json 存了带 /v1 后缀的 baseUrl 触发 provider_error。
+// 顺序敏感：必须先去斜杠再去 /v1，否则 /v1// 会残留 /v1 → 仍双重拼接。纯函数，离线可单测。
+export function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
+}
+
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
 
 function isRetryableStatus(status: number): boolean {
@@ -65,9 +73,8 @@ export class OpenAICompatProvider implements LLMProvider {
   }
 
   async complete(messages: Message[]): Promise<{ text: string; stopReason: string }> {
-    // 智能拼接：如果 baseUrl 已以 /v1 结尾，不再重复追加（兼容 https://.../v1 与 https://... 两种写法）
-    const base = this.opts.baseUrl.replace(/\/+$/, '');
-    const url = base.endsWith('/v1') ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
+    // baseUrl 经 normalizeBaseUrl 清洗后统一拼 /v1/chat/completions，杜绝 /v1/v1 双重路径
+    const url = `${normalizeBaseUrl(this.opts.baseUrl)}/v1/chat/completions`;
     const body = JSON.stringify({ model: this.opts.model ?? 'gpt-4o-mini', messages: adaptMessages(messages), temperature: 0 });
 
     let lastErr: Error | null = null;

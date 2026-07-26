@@ -1,4 +1,4 @@
-import { OpenAICompatProvider, adaptMessages } from '../src/llm/openaiCompat';
+import { OpenAICompatProvider, adaptMessages, normalizeBaseUrl } from '../src/llm/openaiCompat';
 import { Message } from '../src/types';
 
 test('returns assistant text from mocked fetch', async () => {
@@ -122,4 +122,60 @@ test('timeout aborts hung request and retries', async () => {
   const r = await p.complete([{ role: 'user', content: 'hi' }]);
   expect(r.text).toBe('OK');
   expect(n).toBe(2);
+});
+
+// ───────── baseUrl 防御性清洗（杜绝 /v1/v1 双重路径）─────────
+// 根因：config.json 存了带末尾 /v1 的 baseUrl（如 dashscope .../compatible-mode/v1），
+// 若直接拼 /v1/chat/completions → /v1/v1 → 网关 404 → provider_error 第 1 轮退出。
+
+test('normalizeBaseUrl 剥离末尾 /v1', () => {
+  expect(normalizeBaseUrl('https://dashscope.aliyuncs.com/compatible-mode/v1'))
+    .toBe('https://dashscope.aliyuncs.com/compatible-mode');
+});
+
+test('normalizeBaseUrl 剥离末尾 /v1/ 与裸斜杠', () => {
+  expect(normalizeBaseUrl('https://x/v1/')).toBe('https://x');
+  expect(normalizeBaseUrl('https://x/')).toBe('https://x');
+  expect(normalizeBaseUrl('https://x')).toBe('https://x');
+  expect(normalizeBaseUrl('https://x//')).toBe('https://x');
+});
+
+test('normalizeBaseUrl 剥离 /v1// 双斜杠边界（不残留 /v1）', () => {
+  // 末尾多斜杠场景：先去斜杠再去 /v1，避免残留 /v1 触发双重拼接
+  expect(normalizeBaseUrl('https://x/v1//')).toBe('https://x');
+});
+
+test('normalizeBaseUrl 不误伤非 /v1 后缀', () => {
+  expect(normalizeBaseUrl('https://x/v1beta')).toBe('https://x/v1beta');
+  expect(normalizeBaseUrl('https://x/openai')).toBe('https://x/openai');
+  expect(normalizeBaseUrl('https://x/v1beta/')).toBe('https://x/v1beta');
+});
+
+test('complete() 对带 /v1 后缀的 baseUrl 始终拼出单层 /v1/chat/completions', async () => {
+  const seen: string[] = [];
+  const fakeFetch = async (url: string) => {
+    seen.push(url);
+    return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+  };
+  const cases = [
+    'https://x/v1',
+    'https://x',
+    'https://x/v1/',
+    'https://x/',
+    'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  ];
+  for (const baseUrl of cases) {
+    const p = new OpenAICompatProvider({ baseUrl, apiKey: 'k', fetch: fakeFetch as any });
+    await p.complete([{ role: 'user', content: 'hi' }]);
+  }
+  // 每个用例都拼成标准单层路径
+  expect(seen).toEqual([
+    'https://x/v1/chat/completions',
+    'https://x/v1/chat/completions',
+    'https://x/v1/chat/completions',
+    'https://x/v1/chat/completions',
+    'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+  ]);
+  // 杜绝双重 /v1/v1
+  expect(seen.every((u) => !u.includes('/v1/v1'))).toBe(true);
 });
