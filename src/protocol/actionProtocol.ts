@@ -1,6 +1,9 @@
 import { Action, ToolName } from '../types';
 
-const FENCE = /```action\s*([\s\S]*?)```/g;
+// 围栏正则：兼容未闭合的 ```action 块。
+// 大模型偶发漏写结尾三反引号，若强依赖闭合围栏会令 parse 返回空 → 主循环判无动作 →
+// 死循环重试至上限。此处以 `(?:```|$)` 收尾：有闭合则吃闭合围栏，无闭合则匹配至文本结尾。
+const FENCE = /```action\s*([\s\S]*?)(?:```|$)/g;
 const TOOL_NAMES = new Set<string>(['read_file', 'write_file', 'list_dir', 'run_shell', 'run_tests', 'finish']);
 
 export const ActionProtocol = {

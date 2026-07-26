@@ -20,8 +20,9 @@ export function rlAsk(rl: readline.Interface): AskFn {
 
 // 过滤 LLM 响应中裸露的 ```action {...} ``` 围栏代码块，只保留自然语言解释。
 // 纯函数，离线可单测；被 makeLoopFactory 的 console 包装器复用。
+// 同样兼容未闭合围栏（大模型偶发漏写结尾三反引号），否则终端会把半截 JSON 当自然语言打印。
 export function stripActionFences(text: string): string {
-  return text.replace(/```action\s*[\s\S]*?```/g, '').trim();
+  return text.replace(/```action\s*[\s\S]*?(?:```|$)/g, '').trim();
 }
 
 export async function runRepl(opts: ReplOpts): Promise<void> {
