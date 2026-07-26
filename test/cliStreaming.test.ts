@@ -7,10 +7,12 @@ import * as os from 'os';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
 
-// 漏洞 1 集成：console:true 时 makeLoopFactory 把事件流与 LLM 回复实时打到 stdout。
-// 离线 ScriptedMock 无 key → 自修正演示 → finish；断言 stdout 出现 [assistant]/[action]/[observation]。
+// 人性化流式：console:true 时
+// ① LLM 响应中的裸露 ```action 围栏被过滤，终端只展示自然语言解释；
+// ② action/observation 翻译为自然语言行，不再 JSON.stringify。
+// 离线 ScriptedMock 响应全是围栏、无自然语言 → 过滤后无 🤖 行；但 action/observation 已人性化且无围栏泄漏。
 
-test('console:true 实时流式打印 assistant 文本 + action + observation（离线）', async () => {
+test('console:true 人性化流式：翻译 action/observation，过滤裸露 action 围栏', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'cli-stream-'));
   const logs: string[] = [];
   const spy = jest.spyOn(console, 'log').mockImplementation((...a) => logs.push(a.join(' ')));
@@ -26,12 +28,16 @@ test('console:true 实时流式打印 assistant 文本 + action + observation（
     });
     const r = await run('implement add', dir);
     expect(r.haltReason).toBe('finish');
-    // LLM 自然语言/回复文本
-    expect(logs.some((l) => l.includes('[assistant]'))).toBe(true);
-    // 工具调用
-    expect(logs.some((l) => l.includes('[action]'))).toBe(true);
-    // 执行结果
-    expect(logs.some((l) => l.includes('[observation]'))).toBe(true);
+    // action 已翻译为自然语言动词
+    expect(logs.some((l) => l.includes('写入文件'))).toBe(true);
+    expect(logs.some((l) => l.includes('运行测试'))).toBe(true);
+    // observation 极简
+    expect(logs.some((l) => l.includes('已写入'))).toBe(true);
+    expect(logs.some((l) => l.includes('断言失败') || l.includes('测试通过') || l.includes('测试失败'))).toBe(true);
+    // 关键：终端绝不泄漏裸露 ```action 围栏
+    expect(logs.every((l) => !l.includes('```action'))).toBe(true);
+    // 不再有粗暴 JSON.stringify 的 action/observation 字典（无 "tool":... 字面）
+    expect(logs.every((l) => !l.includes('"tool"'))).toBe(true);
   } finally {
     spy.mockRestore();
     if (prev) process.env.MASTER_PASSWORD = prev;

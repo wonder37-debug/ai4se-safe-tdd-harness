@@ -18,6 +18,12 @@ export function rlAsk(rl: readline.Interface): AskFn {
   return (prompt: string) => new Promise<string>((res) => rl.question(prompt, res));
 }
 
+// 过滤 LLM 响应中裸露的 ```action {...} ``` 围栏代码块，只保留自然语言解释。
+// 纯函数，离线可单测；被 makeLoopFactory 的 console 包装器复用。
+export function stripActionFences(text: string): string {
+  return text.replace(/```action\s*[\s\S]*?```/g, '').trim();
+}
+
 export async function runRepl(opts: ReplOpts): Promise<void> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   opts.approval.setAsk(rlAsk(rl));

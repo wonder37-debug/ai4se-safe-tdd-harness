@@ -29,7 +29,7 @@ import type { ApprovalGateway } from './approval/approvalGateway';
 import { startWebServer } from './web/webServer';
 import { parseArgs } from './cli/args';
 import { loadEnvFile } from './cli/envLoader';
-import { rlAsk, runRepl } from './cli/repl';
+import { rlAsk, runRepl, stripActionFences } from './cli/repl';
 
 export function greet(name: string): string {
   return `hello, ${name}`;
@@ -118,13 +118,14 @@ export function makeLoopFactory(opts: LoopFactoryOpts) {
       // 无有效 Key → 离线降级，确定性自修正演示
       llm = new ScriptedMock(offlineDemoActions());
     }
-    // 漏洞 1 修复：CLI console 模式实时打印大模型自然语言回复
+    // 人性化流式：CLI console 模式实时打印大模型自然语言解释（过滤裸露 action 围栏）
     if (opts.console) {
       const inner = llm;
       llm = {
         complete: async (messages) => {
           const r = await inner.complete(messages);
-          console.log(`[assistant]\n${r.text}`);
+          const said = stripActionFences(r.text);
+          if (said) console.log(`🤖 ${said}`);
           return r;
         },
       };

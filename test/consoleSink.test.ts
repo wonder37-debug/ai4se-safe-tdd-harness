@@ -1,44 +1,125 @@
 import { ConsoleSink } from '../src/loop/eventSink';
 
-// 漏洞 1 修复：REPL 会话实时打印事件流。ConsoleSink 把 AgentLoop 发出的事件
-// 翻译为可读行：[action] 工具+参数 / [observation] 结果 / [approval] 裁决 / [halt] 终止。
-// write 函数可注入，便于离线单测（默认 console.log）。
+// 人性化终端输出：放弃 JSON.stringify，把 action/observation/halt 翻译为自然语言行。
 
-test('ConsoleSink 打印 action 行（含 tool 与 args）', () => {
+test('action: write_file → 📄 写入文件: <path>，不再泄漏 JSON', () => {
   const lines: string[] = [];
   const sink = new ConsoleSink((l) => lines.push(l));
-  sink.emit({ type: 'action', payload: { tool: 'write_file', args: { path: 'a.txt', content: 'hi' } }, iter: 1 });
-  expect(lines[0]).toContain('[action]');
-  expect(lines[0]).toContain('write_file');
-  expect(lines[0]).toContain('a.txt');
+  sink.emit({ type: 'action', payload: { tool: 'write_file', args: { path: 'add.js', content: 'module.exports=...' } }, iter: 1 });
+  expect(lines[0]).toContain('📄');
+  expect(lines[0]).toContain('写入文件');
+  expect(lines[0]).toContain('add.js');
+  expect(lines[0]).not.toContain('{');          // 不再 JSON.stringify
+  expect(lines[0]).not.toContain('write_file'); // 工具名翻译为中文动词
 });
 
-test('ConsoleSink 打印 observation 行', () => {
+test('action: read_file → 📖 读取文件: <path>', () => {
   const lines: string[] = [];
   const sink = new ConsoleSink((l) => lines.push(l));
-  sink.emit({ type: 'observation', payload: { ok: true, content: 'wrote a.txt' }, iter: 2 });
-  expect(lines.some((l) => l.includes('[observation]'))).toBe(true);
-  expect(lines.some((l) => l.includes('wrote a.txt'))).toBe(true);
+  sink.emit({ type: 'action', payload: { tool: 'read_file', args: { path: 'add.test.js' } }, iter: 1 });
+  expect(lines[0]).toContain('📖');
+  expect(lines[0]).toContain('add.test.js');
 });
 
-test('ConsoleSink 打印 approval_decision 行（含 decision 与 reason）', () => {
+test('action: run_tests → 🧪 运行测试: <command>', () => {
   const lines: string[] = [];
   const sink = new ConsoleSink((l) => lines.push(l));
-  sink.emit({ type: 'approval_decision', payload: { decision: 'deny', reason: 'too dangerous' }, iter: 3 });
-  expect(lines[0]).toContain('[approval]');
-  expect(lines[0]).toContain('deny');
-  expect(lines[0]).toContain('too dangerous');
+  sink.emit({ type: 'action', payload: { tool: 'run_tests', args: { command: 'npx jest' } }, iter: 1 });
+  expect(lines[0]).toContain('🧪');
+  expect(lines[0]).toContain('npx jest');
 });
 
-test('ConsoleSink 打印 halt 行（含 reason）', () => {
+test('observation: 成功 → ✅ 已写入（承接上一 action 工具）', () => {
+  const lines: string[] = [];
+  const sink = new ConsoleSink((l) => lines.push(l));
+  sink.emit({ type: 'action', payload: { tool: 'write_file', args: { path: 'a' } }, iter: 1 });
+  sink.emit({ type: 'observation', payload: { ok: true, content: 'wrote a' }, iter: 1 });
+  const obs = lines[1];
+  expect(obs).toContain('✅');
+  expect(obs).toContain('已写入');
+  expect(obs).not.toContain('{');        // 不再 JSON 字典
+  expect(obs).not.toContain('wrote a');  // 成功时不打印冗余 content
+});
+
+test('observation: run_tests 成功 → ✅ 测试通过（不打印 stdout）', () => {
+  const lines: string[] = [];
+  const sink = new ConsoleSink((l) => lines.push(l));
+  sink.emit({ type: 'action', payload: { tool: 'run_tests', args: { command: 'x' } }, iter: 1 });
+  sink.emit({ type: 'observation', payload: { ok: true, exitCode: 0, stdout: 'huge output' }, iter: 1 });
+  expect(lines[1]).toContain('测试通过');
+  expect(lines[1]).not.toContain('huge output');
+});
+
+test('observation: 断言失败 → ❌ 断言失败 file:line + hint（不打印 evidence）', () => {
+  const lines: string[] = [];
+  const sink = new ConsoleSink((l) => lines.push(l));
+  sink.emit({ type: 'action', payload: { tool: 'run_tests', args: {} }, iter: 1 });
+  sink.emit({
+    type: 'observation',
+    payload: {
+      errorType: 'assertion', failedTests: ['t'],
+      assertion: { file: 'add.test.js', line: 4, snippet: 'x' },
+      evidence: 'long raw stderr', hint: 'adjust implementation so add.test.js:4 assertion passes',
+    },
+    iter: 1,
+  });
+  expect(lines[1]).toContain('❌');
+  expect(lines[1]).toContain('add.test.js:4');
+  expect(lines[1]).toContain('💡');
+  expect(lines[1]).not.toContain('long raw stderr');
+});
+
+test('observation: 语法失败 → ❌ 语法错误 file:line', () => {
+  const lines: string[] = [];
+  const sink = new ConsoleSink((l) => lines.push(l));
+  sink.emit({ type: 'action', payload: { tool: 'run_tests', args: {} }, iter: 1 });
+  sink.emit({ type: 'observation', payload: { errorType: 'syntax', assertion: { file: 'a.js', line: 5, snippet: '' }, evidence: 'x', hint: 'h' }, iter: 1 });
+  expect(lines[1]).toContain('语法错误');
+  expect(lines[1]).toContain('a.js:5');
+});
+
+test('observation: 普通工具失败 → ❌ error 首行', () => {
+  const lines: string[] = [];
+  const sink = new ConsoleSink((l) => lines.push(l));
+  sink.emit({ type: 'action', payload: { tool: 'read_file', args: { path: 'x' } }, iter: 1 });
+  sink.emit({ type: 'observation', payload: { ok: false, error: 'ENOENT: no such file or directory' }, iter: 1 });
+  expect(lines[1]).toContain('❌');
+  expect(lines[1]).toContain('ENOENT');
+});
+
+test('halt: finish → 🏁 任务完成（无 JSON）', () => {
   const lines: string[] = [];
   const sink = new ConsoleSink((l) => lines.push(l));
   sink.emit({ type: 'halt', payload: { reason: 'finish' }, iter: 5 });
-  expect(lines[0]).toContain('[halt]');
-  expect(lines[0]).toContain('finish');
+  expect(lines[0]).toContain('🏁');
+  expect(lines[0]).not.toContain('{');
 });
 
-test('ConsoleSink 对未知事件类型不崩（静默跳过）', () => {
+test('halt: stuck → 卡死停机', () => {
+  const lines: string[] = [];
+  const sink = new ConsoleSink((l) => lines.push(l));
+  sink.emit({ type: 'halt', payload: { reason: 'stuck', key: 'a.js:4' }, iter: 5 });
+  expect(lines[0]).toContain('卡死');
+});
+
+test('approval: deny → 🚫 拒绝 — reason', () => {
+  const lines: string[] = [];
+  const sink = new ConsoleSink((l) => lines.push(l));
+  sink.emit({ type: 'approval_decision', payload: { decision: 'deny', reason: 'too dangerous' }, iter: 2 });
+  expect(lines[0]).toContain('拒绝');
+  expect(lines[0]).toContain('too dangerous');
+});
+
+test('长命令被截断（不溢出终端，带 …）', () => {
+  const lines: string[] = [];
+  const sink = new ConsoleSink((l) => lines.push(l));
+  const longCmd = 'node -e "' + 'x'.repeat(200) + '"';
+  sink.emit({ type: 'action', payload: { tool: 'run_shell', args: { command: longCmd } }, iter: 1 });
+  expect(lines[0].length).toBeLessThan(80);
+  expect(lines[0]).toContain('…');
+});
+
+test('未知事件类型不崩（静默跳过）', () => {
   const lines: string[] = [];
   const sink = new ConsoleSink((l) => lines.push(l));
   expect(() => sink.emit({ type: 'approval_request' as any, payload: {}, iter: 1 })).not.toThrow();
