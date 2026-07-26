@@ -48,10 +48,29 @@ function pick(id: string) {
   return { id, severity: p.severity as Severity, reason: p.reason };
 }
 
+// 漏洞 2 修复：Windows 递归/强制删除护栏。
+// Windows 命令非 POSIX shell，shell-quote 会误切（反斜杠路径 / /s 标志）；
+// 故在 tokenize 之前对原始小写串做词边界 + includes 精准匹配，先于 Linux 规则判定。
+function matchWindows(raw: string): { id: string; severity: Severity; reason: string } | null {
+  // del + /s 或 /f（递归 或 强制删除）
+  if (/\bdel\b/.test(raw) && (raw.includes('/s') || raw.includes('/f')))
+    return pick('windows-del-recursive');
+  // rmdir / rd + /s（递归删除目录）
+  if ((/\brmdir\b/.test(raw) || /\brd\b/.test(raw)) && raw.includes('/s'))
+    return pick('windows-rmdir-recursive');
+  // PowerShell Remove-Item -Recurse 或别名 ri -Recurse
+  if ((/\bremove-item\b/.test(raw) || /\bri\b/.test(raw)) && raw.includes('-recurse'))
+    return pick('windows-remove-item-recurse');
+  return null;
+}
+
 export const Guardrail = {
   assess(action: Action): GuardrailVerdict {
     if (action.tool !== 'run_shell' && action.tool !== 'run_tests') return { severity: 'none', reasons: [] };
     const cmd = String(action.args.command ?? '');
+    // Windows 删除命令优先判定（tokenize 前按原始串匹配，精准且不受反斜杠影响）
+    const winHit = matchWindows(cmd.toLowerCase());
+    if (winHit) return { severity: winHit.severity, reasons: [`${winHit.id}: ${winHit.reason}`] };
     let tokens: string[];
     try { tokens = toTokens(cmd); }
     catch { return { severity: 'high', reasons: ['tokenize-failed: malformed command, forcing approval'] }; }

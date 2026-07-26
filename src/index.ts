@@ -21,7 +21,8 @@ import type { LLMProvider } from './llm/provider';
 import { EncryptedFileStore } from './creds/credentialStore';
 import { ConfigStore, JsonConfigStore } from './creds/configStore';
 import { resolveCredentials } from './creds/credResolver';
-import { EventStore } from './loop/eventSink';
+import { EventStore, ConsoleSink } from './loop/eventSink';
+import type { EventSink } from './loop/eventSink';
 import { HttpApprovalGateway } from './approval/httpApprovalGateway';
 import { CliApprovalGateway } from './approval/cliApprovalGateway';
 import type { ApprovalGateway } from './approval/approvalGateway';
@@ -34,6 +35,9 @@ export function greet(name: string): string {
   return `hello, ${name}`;
 }
 
+// 漏洞 1 修复：终端事件流 sink（无状态，默认写 console.log），CLI console 模式复用
+const consoleSink = new ConsoleSink();
+
 export interface LoopFactoryOpts {
   creds: EncryptedFileStore;
   config: ConfigStore;
@@ -42,6 +46,8 @@ export interface LoopFactoryOpts {
   eventStore: EventStore;
   /** CLI 注入 .env 兜底；web 不传 → 不读 .env（保持 web 行为不变）。 */
   envFile?: Record<string, string>;
+  /** 漏洞 1 修复：CLI 模式下实时把 LLM 回复与事件流打印到终端。web 不传 → 静默。 */
+  console?: boolean;
 }
 
 // 组装 system prompt：任务 + 平台信息 + 动作协议。
@@ -112,6 +118,22 @@ export function makeLoopFactory(opts: LoopFactoryOpts) {
       // 无有效 Key → 离线降级，确定性自修正演示
       llm = new ScriptedMock(offlineDemoActions());
     }
+    // 漏洞 1 修复：CLI console 模式实时打印大模型自然语言回复
+    if (opts.console) {
+      const inner = llm;
+      llm = {
+        complete: async (messages) => {
+          const r = await inner.complete(messages);
+          console.log(`[assistant]\n${r.text}`);
+          return r;
+        },
+      };
+    }
+    // 漏洞 1 修复：CLI console 模式实时打印事件流（action/observation/approval/halt）；
+    // 与 EventStore fan-out，使前端轮询与终端流式两不误
+    const sink: EventSink = opts.console
+      ? { emit: (e) => { opts.eventStore.emit(e); consoleSink.emit(e); } }
+      : opts.eventStore;
     const loop = new AgentLoop({
       llm,
       registry: new ToolRegistry([...fileTools, ...shellTools]),
@@ -122,7 +144,7 @@ export function makeLoopFactory(opts: LoopFactoryOpts) {
       cwd: workCwd,
       maxIter: 20,
       systemPrompt: buildSystemPrompt(task, process.platform),
-      sink: opts.eventStore,
+      sink,
     });
     return loop.run();
   };
@@ -170,11 +192,11 @@ async function main() {
     return;
   }
 
-  // task / interactive → CLI 人工审批网关 + .env 兜底
+  // task / interactive → CLI 人工审批网关 + .env 兜底 + 实时事件流
   const cwd = parsed.cwd && existsSync(parsed.cwd) ? parsed.cwd : process.cwd();
   const approval = new CliApprovalGateway();
   const envFile = await loadEnvFile(path.join(process.cwd(), '.env'));
-  const loopFactory = makeLoopFactory({ creds, config, approval, eventStore, envFile });
+  const loopFactory = makeLoopFactory({ creds, config, approval, eventStore, envFile, console: true });
 
   if (parsed.mode === 'task') {
     if (!parsed.task) {

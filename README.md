@@ -189,6 +189,7 @@ ai4se-safe-tdd-harness/
 | 进程环境可见 | `env` 可读 | 加密文件优先；`.env` 仅 fallback 并告警；运行时不打印 key |
 | 磁盘明文 | `.env` 落盘 | 主路径用 AES-256-GCM 加密文件 `~/.ai4se/creds.enc` |
 | 拦截绕过 | `r""m` / base64 管道 | `shell-quote` token 层匹配，揭穿引号 / 转义混淆 |
+| Windows 删库绕过 | `del /s /q`、`rmdir /s`、`Remove-Item -Recurse` | `matchWindows` 在 tokenize 前按原始串词边界匹配，判 `high` 触发 HITL |
 | 凭据外传 | `curl -H Authorization` | 危险模式库含"带 Authorization 的外发请求"模式 |
 
 ### 密码 / 密文 / 明文 的分层设计

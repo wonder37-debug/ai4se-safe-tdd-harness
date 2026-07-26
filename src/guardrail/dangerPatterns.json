@@ -1,6 +1,12 @@
 [
   { "id": "recursive-delete", "severity": "high",
     "reason": "recursive forced deletion" },
+  { "id": "windows-del-recursive", "severity": "high",
+    "reason": "Windows recursive/forced deletion (del /s, del /f)" },
+  { "id": "windows-rmdir-recursive", "severity": "high",
+    "reason": "Windows recursive dir removal (rmdir /s, rd /s)" },
+  { "id": "windows-remove-item-recurse", "severity": "high",
+    "reason": "PowerShell recursive removal (Remove-Item -Recurse, ri -Recurse)" },
   { "id": "privilege-escalation", "severity": "high",
     "reason": "privilege escalation" },
   { "id": "remote-script-exec", "severity": "high",
