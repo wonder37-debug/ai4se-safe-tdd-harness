@@ -166,7 +166,7 @@ ai4se-safe-tdd-harness/
 ├── test/                  # 单元测试（无网络，mock LLM）；integration/real-llm.test.ts 可选联网
 ├── demo/                  # §A.6 机制演示：mechanism-demo.test.ts + fixtures/
 ├── Dockerfile             # 多阶段构建（build → 生产镜像），CMD 带 --web
-├── .gitlab-ci.yml         # 含 unit-test job（npm ci && npm test）
+├── .gitlab-ci.yml         # unit-test（build 门禁 + coverage）与 docker-build（编译产物校验）
 ├── .env.example           # 字段模板（值为空，不含真实凭据）
 ├── package.json           # scripts: test / demo / build / start
 ├── tsconfig.json
@@ -189,6 +189,9 @@ ai4se-safe-tdd-harness/
 | 进程环境可见 | `env` 可读 | 加密文件优先；`.env` 仅 fallback 并告警；运行时不打印 key |
 | 磁盘明文 | `.env` 落盘 | 主路径用 AES-256-GCM 加密文件 `~/.ai4se/creds.enc` |
 | 拦截绕过 | `r""m` / base64 管道 | `shell-quote` token 层匹配，揭穿引号 / 转义混淆 |
+| 相对路径删库 | `rm -rf node_modules` / `rm -rf ./dist` | `recursive-delete` 不再要求根路径前缀，出现 `-rf` / `--no-preserve-root` / `-r`+`-f` 即 `high` |
+| 路径越界 | `read_file /etc/shadow`、`write_file ../../x` | fileTools 工作区路径围栏：解析后越出 `cwd` 直接拒绝 |
+| Web 面板未鉴权 | 公网暴露 `/api/*` | 可选 `HARNESS_TOKEN` bearer 鉴权；容器以非 root（`USER node`）运行 |
 | Windows 删库绕过 | `del /s /q`、`rmdir /s`、`Remove-Item -Recurse` | `matchWindows` 在 tokenize 前按原始串词边界匹配，判 `high` 触发 HITL |
 | 凭据外传 | `curl -H Authorization` | 危险模式库含"带 Authorization 的外发请求"模式 |
 
@@ -210,6 +213,28 @@ ai4se-safe-tdd-harness/
 ### 治理护栏的代码边界（机制非提示）
 
 "不要删除数据库"写在 system prompt 里**不算**治理；`Guardrail.assess(action)` 这个确定性函数拦截 `rm -rf /` 才算。本仓库所有核心机制——`Guardrail`、`FeedbackClassifier`、`ToolRegistry.dispatch`、`MemoryStore`、`AgentLoop` 的 halt 判定——均为手写函数，移除真实 LLM 换 `ScriptedMock` 后仍可确定性单测（`npm test` 全绿）。
+
+## 安全加固（security hardening）
+
+以下机制均有对应单测，行为与代码一致：
+
+### Guardrail 匹配语义（递归删除 / 误报）
+
+- **递归删除不再要求根路径**：`recursive-delete` 判定改为「出现 `-rf` 或 `--no-preserve-root` 或（`-r` 且 `-f`）即 `high`」——`rm -rf node_modules`、`rm -rf ./dist` 同样弹审批，不再因相对路径漏拦。
+- **整词 token 匹配去误报**：`has()` 仅在 tokenize 后的词列表上整词匹配，不再对拼接串做子串包含——`echo issue`（含子串 `su`）、`echo curly | sh`（含子串 `curl`）不再误判；`remote-script-exec` 的管道检测改为 token 邻接（`|` 的下一个 token 为 `sh`/`bash`）。`db-destroy` / `cred-exfil` / `system-write` / `fork-bomb` 因语义需要保留对拼接串的子串匹配。
+- **`plain-rm` 设计取舍**：单文件 `rm a.txt` 维持 `low` 仅告警不弹审批（避免审批疲劳）；若上一轮刚被拒绝，`deny-escalation` 会把后续 `rm` 升级 `high`，堵住「拒绝后分拆命令绕过」路径。
+
+### Web 面板鉴权（HARNESS_TOKEN）
+
+设置环境变量 `HARNESS_TOKEN` 后，除 `GET /api/health` 外所有 `/api/*` 必须携带 `Authorization: Bearer <token>`，否则 `401`；未设置则保持本地无认证，但启动时打印醒目告警（切勿公网暴露）；绑定非 `127.0.0.1`/`localhost` 地址同样告警。Docker 镜像已改为 `USER node` 非 root 运行。另外：请求 body 上限 1MB（超出 `413`）；单任务串行，进行中时并发 `POST /api/task` 返回 `409 busy`。
+
+### 工作区路径围栏
+
+`read_file` / `write_file` / `list_dir` 统一校验解析后的绝对路径必须落在工作区 `cwd` 内，越界（如 `/etc/shadow`、`../../escape.txt`）直接返回 `{ ok:false, error:'path escapes workspace' }`，不碰文件系统。
+
+### 审批超时默认 deny
+
+`HttpApprovalGateway` 构造时接受 `timeoutMs`（默认 300000），审批请求挂起超时后自动裁决 `{decision:'deny', reason:'approval timeout'}` 并清理 pending——无人值守时高危动作不会永久阻塞也不会默认放行。
 
 ## 架构与数据流
 
@@ -233,7 +258,7 @@ AgentLoop (自研主循环)
 
 ## CI
 
-`.gitlab-ci.yml` 定义了 `unit-test` job（`npm ci && npm test`）。机制演示见 `demo/mechanism-demo.test.ts`（`npm run demo`）。
+`.gitlab-ci.yml` 定义两个 job：`unit-test`（`npm ci && npm run build && npx jest --coverage`，tsc 类型门禁 + 覆盖率报告）与 `docker-build`（编译产物存在性校验）。机制演示见 `demo/mechanism-demo.test.ts`（`npm run demo`）。
 
 ## 许可
 

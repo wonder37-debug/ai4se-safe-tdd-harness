@@ -182,6 +182,8 @@ git commit -m "chore: scaffold node+ts+jest project with smoke test"
 
 - [x] **步骤 1：写失败测试**
 
+> 【已变更 T11】下面快照中的 `LoopState` 已从 `types.ts` 删除（运行时从未维护的死类型），现行 `test/types.test.ts` 不再引用它。
+
 `test/types.test.ts`:
 ```ts
 import type { Action, Message, Observation, Feedback, GuardrailVerdict, LoopState, Approval } from '../src/types';
@@ -791,6 +793,8 @@ function toTokens(cmd: string): string[] {
 function join(tokens: string[]): string { return tokens.join(' '); }
 
 function match(tokens: string[]): { id: string; severity: Severity; reason: string } | null {
+  // 【已变更 T1/T2】下面为历史快照：现行实现中 has() 仅整词 token 匹配（去 s.includes 兜底）；
+  // recursive-delete 不再要求根路径前缀；管道检测改为 token 邻接（`|` 后跟 sh/bash）。以 src/guardrail/guardrail.ts 为准。
   const s = join(tokens);
   const has = (...needles: string[]) => needles.every(n => tokens.includes(n) || s.includes(n));
 

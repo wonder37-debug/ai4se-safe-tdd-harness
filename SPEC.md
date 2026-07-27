@@ -46,7 +46,7 @@
 
 ### 3.3 ToolRegistry（工具分发）
 - 注册工具：`read_file / write_file / list_dir / run_shell / run_tests / finish`。
-- 每个 tool：`{name, schema, execute(args, ctx): Promise<Observation>}`，`ctx` 含 `cwd`；`MemoryStore`/`CredentialStore` 由 `AgentLoop` 直接持有，**不注入 `ToolContext`**（当前无 tool 需要它们，YAGNI 裁剪；后续若有 tool 需凭据/记忆，再扩 `ctx`）。
+- 每个 tool：`{name, schema, execute(args, ctx): Promise<Observation>}`，`ctx` 含 `cwd`；`MemoryStore`/`CredentialStore` 由 `AgentLoop` 直接持有，**不注入 `ToolContext`**（当前无 tool 需要它们，YAGNI 裁剪；后续若有 tool 需凭据/记忆，再扩 `ctx`）。【已实现 T5】文件类 tool（`read_file`/`write_file`/`list_dir`）统一校验解析后路径必须落在 `cwd` 内，越界返回 `{ok:false, error:'path escapes workspace'}`。【已实现 T14】`run_shell`/`run_tests` 对缺省/非字符串 `command` 直接返回 `{ok:false, error:'missing command'}`，不进入子进程。
 - `run_shell`/`run_tests` 执行前先过 `Guardrail.assess`（由主循环调用，非 tool 内部）。
 - 边界：`read_file` 越界（如二进制大文件）→ 截断并标注；`run_tests` 超时 60s → tool 返回 `error:'timeout'`、`exitCode:-1`，由 `FeedbackClassifier` 归类为 `'other'`（降级发生在 FeedbackClassifier，非 tool）。
 - 错误处理：tool 抛错 → 转 `Observation{ok:false, error}` 回灌。
@@ -55,13 +55,13 @@
 - 输入：`Action`（仅 `run_shell`/`run_tests` 评估）。
 - 行为：`shell-quote` tokenize 命令 → 命中危险模式库 → 判 `severity`。
 - 输出：`{severity: 'none'|'low'|'high', reasons: string[]}`。
-- 危险模式库（声明式 `dangerPatterns.json`，~7-9 条）：`rm -rf`/`--no-preserve-root` 递归删、`sudo`/`su` 提权、`curl|sh`/`wget|bash` 远程脚本执行、`DROP TABLE/DATABASE/TRUNCATE`、fork bomb、写系统路径（`> /etc/`、`> /dev/sd*`、cron）、`chmod 777` 关键路径、**带 `Authorization`/`-H ...token` 头的外发请求**（凭据外传）。
+- 危险模式库（声明式 `dangerPatterns.json`，~7-9 条）：`rm -rf`/`--no-preserve-root` 递归删、`sudo`/`su` 提权、`curl|sh`/`wget|bash` 远程脚本执行、`DROP TABLE/DATABASE/TRUNCATE`、fork bomb、写系统路径（`> /etc/`、`> /dev/sd*`、cron）、`chmod 777` 关键路径、**带 `Authorization`/`-H ...token` 头的外发请求**（凭据外传）。【已变更 T1】`recursive-delete` 不再要求根路径前缀：出现 `-rf` / `--no-preserve-root` / （`-r` 且 `-f`）即 `high`，`rm -rf node_modules` 等相对路径同样拦截。【已变更 T2】`has()` 改为仅整词 token 匹配（去子串误报）；管道检测改为 token 邻接（`|` 后跟 `sh`/`bash`）；`db-destroy`/`cred-exfil`/`system-write`/`fork-bomb` 保留拼接串子串匹配。
 - 边界：`low`（如 `rm` 无 `-rf`）→ 告警继续；`high` → 触发 HITL；`none` → 直行。
 - 错误处理：tokenize 失败（畸形命令）→ 视为 `high`，强制审批。
 
 ### 3.5 ApprovalGateway（HITL 审批抽象）
 - 接口：`async request(action, reasons): Promise<{decision: 'approve'|'deny', reason: string}>`。
-- 生产实现 `HttpApprovalGateway`：返回 Promise，resolver 挂到 `pendingApprovals[id]`，等 `POST /api/approval` 命中 id 后 resolve；超时 5min 默认 deny。
+- 生产实现 `HttpApprovalGateway`：返回 Promise，resolver 挂到 `pendingApprovals[id]`，等 `POST /api/approval` 命中 id 后 resolve；超时 5min 默认 deny。【已实现 T6】构造时接受 `timeoutMs`（默认 300000），超时自动 `{decision:'deny', reason:'approval timeout'}` 并清理 pending，`resolve()` 幂等。
 - 测试实现 `MockApprovalGateway`：构造时传入裁决队列，按序返回。
 - 边界：deny 的 reason 作为 observation 回灌；approve 后进入 EXECUTING。
 
@@ -81,7 +81,7 @@
 - 错误处理：任何未预期异常 → `HALTED(error)` 并把错误写事件流。
 
 ### 3.8 MemoryStore（记忆维度最小实现）
-- 接口：`read(): Note[]`、`write(key, note): void`、`clear(key): void`。
+- 接口：`read(): Note[]`、`write(key, note): void`、`clear(key): void`。【已变更 T10】全部改为 async（`fs/promises`），不再混用同步 `require('fs')`；`CredentialStore.clear()` 同步语义一并异步化。
 - 实现：`./memory/*.md` 文件式 KV，启动时把约定类笔记拼进 system prompt。
 - 边界：不引入向量库；非深维度，仅满足六维度"可运行最低实现"。
 
@@ -99,7 +99,7 @@
   - `GET /api/events?since=N` — 返回 id>N 的事件数组（action/observation/审批请求/halt）。
   - `POST /api/approval` — `{id, decision, reason}`，触发 `HttpApprovalGateway` resolver。
 - 前端：静态 HTML + 原生 JS（无框架），三栏：任务输入 / 事件流（每秒轮询）/ 待审批区。
-- 边界：单任务并发。
+- 边界：单任务并发。【已实现 T3/T8/T9】可选 `HARNESS_TOKEN` bearer 鉴权（`/api/health` 豁免，未设则启动告警）；body 上限 1MB 超出 `413`；任务进行中并发 `POST /api/task` 返回 `409 busy`；`halt` 事件仅由 `AgentLoop` 的 sink 统一发出，web 层不重复补发。
 
 ---
 
@@ -181,7 +181,7 @@
 - `Feedback = {errorType: 'assertion'|'syntax'|'other', failedTests: string[], assertion?: {file,line,snippet}, evidence: string, hint: string}`。
 - `GuardrailVerdict = {severity: 'none'|'low'|'high', reasons: string[]}`。
 - `Approval = ApprovalRequest & Partial<ApprovalDecision>`（实现侧拆为 `ApprovalRequest{ id, action, reasons }` 与 `ApprovalDecision{ decision, reason }` 两型，组合还原本统一型）。
-- `Event = {id, type: 'action'|'observation'|'approval_request'|'approval_decision'|'halt', payload, iter}`。`approval_decision` 为 PLAN 扩展（前端轮询审批结果用）；`payload` 对应：`action`→`Action`、`observation`→`Observation|Feedback`、`approval_request`→`ApprovalRequest`、`approval_decision`→`ApprovalDecision`、`halt`→`{reason}`。
+- `Event = {id, type: 'action'|'observation'|'approval_request'|'approval_decision'|'halt', payload, iter}`。`approval_decision` 为 PLAN 扩展（前端轮询审批结果用）；`payload` 对应：`action`→`Action`、`observation`→`Observation|Feedback`、`approval_request`→`ApprovalRequest`、`approval_decision`→`ApprovalDecision`、`halt`→`{reason}`。【已实现 T4】`AgentLoop` 在呼叫审批前 emit `approval_request`，裁决后 emit `approval_decision`，事件流与本节一致。
 
 ---
 
