@@ -18,12 +18,29 @@ export interface WebServerOpts {
 }
 
 export async function startWebServer(opts: WebServerOpts): Promise<{ server: http.Server }> {
+  // Task 3：可选 bearer 鉴权。启动时读一次 HARNESS_TOKEN；
+  // 已设置 → 除 GET /api/health 外所有 /api/* 必须带 Authorization: Bearer <token>；
+  // 未设置 → 保持本地无认证行为，但打印醒目告警。
+  const token = process.env.HARNESS_TOKEN;
+  if (!token) {
+    console.warn('[security] 未设置 HARNESS_TOKEN，Web 面板无认证，切勿公网暴露');
+  }
+  const host = process.env.HOST ?? '0.0.0.0';
+  if (host !== '127.0.0.1' && host !== 'localhost') {
+    console.warn(`[security] Web 面板绑定非回环地址 ${host}，局域网内均可访问；公网环境请配合 HARNESS_TOKEN`);
+  }
+  const authorized = (req: http.IncomingMessage): boolean => {
+    if (!token) return true;
+    return req.headers.authorization === `Bearer ${token}`;
+  };
   const server = http.createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const url = new URL(req.url ?? '', `http://localhost`);
     try {
       if (req.method === 'GET' && url.pathname === '/api/health') {
         res.end(JSON.stringify({ ok: true }));
+      } else if (url.pathname.startsWith('/api/') && !authorized(req)) {
+        res.statusCode = 401; res.end(JSON.stringify({ error: 'unauthorized' }));
       } else if (req.method === 'GET' && url.pathname === '/favicon.ico') {
         // 消除浏览器自动请求 favicon 的 404 噪声
         res.statusCode = 204; res.end();
@@ -76,7 +93,7 @@ export async function startWebServer(opts: WebServerOpts): Promise<{ server: htt
       res.statusCode = 500; res.end(JSON.stringify({ error: String(e?.message ?? e) }));
     }
   });
-  await new Promise<void>((r) => server.listen(opts.port, '0.0.0.0', r));
+  await new Promise<void>((r) => server.listen(opts.port, host, r));
   return { server };
 }
 

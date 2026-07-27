@@ -8,10 +8,10 @@ import * as os from 'os';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-function req(method: string, port: number, p: string, body?: any): Promise<{status: number, body: any}> {
+function req(method: string, port: number, p: string, body?: any, headers?: Record<string, string>): Promise<{status: number, body: any}> {
   return new Promise((resolve) => {
     const data = body ? JSON.stringify(body) : '';
-    const r = http.request({ port, path: p, method, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, (res) => {
+    const r = http.request({ port, path: p, method, headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), ...(headers ?? {}) } }, (res) => {
       let buf = '';
       res.on('data', (c) => (buf += c));
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body: buf ? JSON.parse(buf) : {} }));
@@ -77,6 +77,50 @@ test('GET /favicon.ico 返回 204（消除浏览器 404 噪声）', async () => 
     const r = await req('GET', port, '/favicon.ico');
     expect(r.status).toBe(204);
   } finally { srv.server.close(); }
+});
+
+// ───────── Task 3：可选 bearer 鉴权（HARNESS_TOKEN） ────────
+
+describe('HARNESS_TOKEN 鉴权', () => {
+  afterEach(() => { delete process.env.HARNESS_TOKEN; });
+
+  test('设置 token 后：无 Authorization 的 /api/events → 401', async () => {
+    process.env.HARNESS_TOKEN = 'secret';
+    const { srv, port } = await boot();
+    try {
+      const r = await req('GET', port, '/api/events?since=0');
+      expect(r.status).toBe(401);
+    } finally { srv.server.close(); }
+  });
+
+  test('设置 token 后：带正确 Bearer → 200', async () => {
+    process.env.HARNESS_TOKEN = 'secret';
+    const { srv, port } = await boot();
+    try {
+      const r = await req('GET', port, '/api/events?since=0', undefined, { Authorization: 'Bearer secret' });
+      expect(r.status).toBe(200);
+      expect(Array.isArray(r.body)).toBe(true);
+    } finally { srv.server.close(); }
+  });
+
+  test('设置 token 后：错误 token → 401；/api/health 豁免仍 200', async () => {
+    process.env.HARNESS_TOKEN = 'secret';
+    const { srv, port } = await boot();
+    try {
+      const bad = await req('GET', port, '/api/events?since=0', undefined, { Authorization: 'Bearer wrong' });
+      expect(bad.status).toBe(401);
+      const health = await req('GET', port, '/api/health');
+      expect(health.status).toBe(200);
+    } finally { srv.server.close(); }
+  });
+
+  test('未设 token：保持原有无认证行为', async () => {
+    const { srv, port } = await boot();
+    try {
+      const r = await req('GET', port, '/api/events?since=0');
+      expect(r.status).toBe(200);
+    } finally { srv.server.close(); }
+  });
 });
 
 test('POST /api_task 正常 finish 不再双 emit halt（仅 provider_error 才补 emit）', async () => {
