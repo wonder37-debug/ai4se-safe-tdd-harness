@@ -65,6 +65,8 @@ export class AgentLoop {
       const verdict = this.deps.guardrail.assess(action, this.session);
       let effective: Action = action;
       if (verdict.severity === 'high') {
+        // SPEC §6：先广播审批请求，再悬停等待裁决（web/CLI 前端据此展示待审批项）
+        this.sink.emit({ type: 'approval_request', payload: { action, reasons: verdict.reasons }, iter });
         const dec = await this.deps.approval.request(action, verdict.reasons);
         this.sink.emit({ type: 'approval_decision', payload: dec, iter });
         if (dec.decision === 'deny') {
