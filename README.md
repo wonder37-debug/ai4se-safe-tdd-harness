@@ -58,6 +58,27 @@ node dist/index.js --web          # 监听 $PORT，默认 8080
 
 三者齐备（主密码 + 端点 + 可解密 key）即可使用在线 `OpenAICompatProvider`，在面板录入 `API_KEY` + 主密码保存（加密落盘），再填请求地址 / 模型后提交任务即可完成真实大模型Agent开发（点击启动循环后会有较大延迟，请耐心等待）；任一缺失则降级离线 `ScriptedMock`，无 Key 也能在浏览器观看完整 TDD 自修正闭环演示。
 
+> ⚠️ **主密码必须两边一致**：面板保存 `API_KEY` 时输入的主密码，与启动进程前设的 `MASTER_PASSWORD` 环境变量必须完全相同（文档中 `<...>` 为占位符记号，实际输入时不要带尖括号）。两边不一致时解密会静默失败并降级离线演示——若提交任务后瞬间跑完固定的 add.js 剧本，大概率就是主密码不匹配或凭据未齐备，可用 `GET /api/key/status` 与 `GET /api/config` 自查落盘状态。
+
+### 凭据接入三路径总览
+
+| 路径 | 适用模式 | 做法 | 形态 |
+|---|---|---|---|
+| 1. 面板录入（推荐） | Web | 面板存 `API_KEY`（加密落盘）+ 地址/模型，启动前设 `MASTER_PASSWORD` | 密文 `creds.enc` |
+| 2. 环境变量直给 | Web + CLI | 见下方 PowerShell 示例，设好后直接启动 | 明文（带告警） |
+| 3. `.env` 文件 | 仅 CLI | 复制 `.env.example` 为 `.env` 填值（已 gitignore） | 明文（带告警） |
+
+路径 2 的 PowerShell 写法（当前终端会话有效，关窗失效；无需 `MASTER_PASSWORD`）：
+
+```powershell
+$env:API_KEY="sk-你的真实key"
+$env:API_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"   # 或其它 OpenAI 兼容端点
+$env:MODEL="qwen-plus"
+node dist/index.js --web    # 或 -i / --task "..."
+```
+
+三路径决议优先级：`creds.enc`+`MASTER_PASSWORD` > `.env` > 进程环境变量；全部缺失 → 降级离线 `ScriptedMock` 演示（不看任务输入，固定剧本）。克隆仓库后**不需要** `.env` 也能接入真实 LLM（走路径 1 或 2）。
+
 ### 3. CLI 命令行模式（交互 REPL / 单次任务）
 
 除 Web 面板外，harness 同样可在终端直接驱动——适合脚本编排、CI 与无浏览器场景。三种模式：
