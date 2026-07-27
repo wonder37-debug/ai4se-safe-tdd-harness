@@ -161,3 +161,41 @@ test('POST /api/task provider_error 时 web 补 emit 一条 halt（短路上未�
     expect(halts[0].payload.reason).toBe('provider_error');
   } finally { srv.server.close(); }
 });
+
+// ───────── Task 8：body 大小上限 + 单任务并发保护 ─────────
+
+test('POST body 超过 1MB → 413', async () => {
+  const { srv, port } = await boot();
+  try {
+    const big = 'x'.repeat(1024 * 1024 + 100); // 略超 1MB
+    const r = await req('POST', port, '/api/config', { baseUrl: big, model: 'm' });
+    expect(r.status).toBe(413);
+  } finally { srv.server.close(); }
+});
+
+test('任务进行中再次 POST /api/task → 409 busy；结束后可再提交', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'web4-'));
+  // 可控长任务：gate resolve 前 loopFactory 不返回，模拟 in-flight
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const srv = await startWebServer({
+    port: 0, eventStore: new EventStore(), approval: new HttpApprovalGateway(),
+    creds: new EncryptedFileStore(path.join(dir, 'c.enc')),
+    config: new JsonConfigStore(path.join(dir, 'config.json')),
+    loopFactory: async () => { await gate; return { haltReason: 'finish', iterations: 1 }; },
+  });
+  const port = (srv.server.address() as any).port;
+  try {
+    const first = await req('POST', port, '/api/task', { task: 'a', cwd: dir });
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({ started: true });
+    const second = await req('POST', port, '/api/task', { task: 'b', cwd: dir });
+    expect(second.status).toBe(409);
+    expect(second.body.error).toBe('busy');
+    // 任务结束后可再次提交
+    release();
+    await new Promise((r) => setTimeout(r, 50));
+    const third = await req('POST', port, '/api/task', { task: 'c', cwd: dir });
+    expect(third.status).toBe(200);
+  } finally { release(); srv.server.close(); }
+});

@@ -33,6 +33,8 @@ export async function startWebServer(opts: WebServerOpts): Promise<{ server: htt
     if (!token) return true;
     return req.headers.authorization === `Bearer ${token}`;
   };
+  // Task 8：单任务并发保护——同一时刻只允许一个 loop 在跑，并发提交返回 409
+  let taskRunning = false;
   const server = http.createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const url = new URL(req.url ?? '', `http://localhost`);
@@ -67,14 +69,19 @@ export async function startWebServer(opts: WebServerOpts): Promise<{ server: htt
         const ok = opts.approval.resolve(b.id, { decision: b.decision, reason: b.reason ?? '' });
         res.end(JSON.stringify({ ok }));
       } else if (req.method === 'POST' && url.pathname === '/api/task') {
+        if (taskRunning) {
+          res.statusCode = 409; res.end(JSON.stringify({ error: 'busy' }));
+          return;
+        }
         const b = await body(req);
+        taskRunning = true;
         // 仅当 loopFactory 短路返回 provider_error（未走 AgentLoop、内核未 emit halt）时，
         // 由 web 补 emit 一条 halt；正常 finish/cap/stuck 内核已 emit，不再重复。
         opts.loopFactory(b.task, b.cwd).then((r) => {
           if (r.haltReason === 'provider_error') {
             opts.eventStore.emit({ type: 'halt', payload: { reason: 'provider_error', iterations: r.iterations }, iter: 0 });
           }
-        });
+        }).finally(() => { taskRunning = false; });
         res.end(JSON.stringify({ started: true }));
       } else if (req.method === 'GET') {
         // 静态前端面板（仅服务于 public/ 内文件，防路径穿越）
@@ -90,17 +97,31 @@ export async function startWebServer(opts: WebServerOpts): Promise<{ server: htt
         res.statusCode = 404; res.end(JSON.stringify({ error: 'not found' }));
       }
     } catch (e: any) {
-      res.statusCode = 500; res.end(JSON.stringify({ error: String(e?.message ?? e) }));
+      // body 超限等携带 status 的错误按其状态码返回，其余 500
+      res.statusCode = e?.status ?? 500; res.end(JSON.stringify({ error: String(e?.message ?? e) }));
     }
   });
   await new Promise<void>((r) => server.listen(opts.port, host, r));
   return { server };
 }
 
-function body(req: http.IncomingMessage): Promise<any> {
-  return new Promise((resolve) => {
+// 读取请求 body（JSON）；超过 maxBytes（默认 1MB）抛 413，防恶意大包打爆内存
+function body(req: http.IncomingMessage, maxBytes = 1024 * 1024): Promise<any> {
+  return new Promise((resolve, reject) => {
     let buf = '';
-    req.on('data', (c) => (buf += c));
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > maxBytes) {
+        // 停止累积并排空剩余数据（不 destroy socket，保证 413 响应能送达客户端）
+        req.removeAllListeners('data');
+        req.removeAllListeners('end');
+        req.resume();
+        reject(Object.assign(new Error('payload too large'), { status: 413 }));
+        return;
+      }
+      buf += c;
+    });
     req.on('end', () => resolve(buf ? JSON.parse(buf) : {}));
   });
 }
