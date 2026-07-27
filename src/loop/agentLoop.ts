@@ -30,11 +30,13 @@ export class AgentLoop {
   private session: SessionState = { lastDenied: false };
   constructor(private deps: LoopDeps) {
     this.sink = deps.sink ?? noopSink;
-    const sys = deps.systemPrompt + (deps.memory.systemPrompt() ? '\n\n' + deps.memory.systemPrompt() : '');
-    this.messages = [{ role: 'system', content: sys }, { role: 'user', content: 'complete the task using tools' }];
+    this.messages = [{ role: 'system', content: deps.systemPrompt }, { role: 'user', content: 'complete the task using tools' }];
   }
 
   async run(): Promise<{ haltReason: HaltReason; iterations: number }> {
+    // memory 注记为异步读取（Task 10），构造器无法 await，改在首次运行时拼入 system prompt
+    const mem = await this.deps.memory.systemPrompt();
+    if (mem) this.messages[0].content += '\n\n' + mem;
     let iter = 0;
     let lastFailKey: string | null = null;
     let sameCount = 0;
