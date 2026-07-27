@@ -1,4 +1,4 @@
-import type { Action, Message, Observation, Feedback, GuardrailVerdict, LoopState, Approval } from '../src/types';
+import type { Action, Message, Observation, Feedback, GuardrailVerdict, Approval } from '../src/types';
 
 test('types: Action shape is constructable', () => {
   const a: Action = { tool: 'run_shell', args: { command: 'ls' } };
@@ -6,10 +6,8 @@ test('types: Action shape is constructable', () => {
   const o: Observation = { ok: true, exitCode: 0 };
   const f: Feedback = { errorType: 'assertion', failedTests: ['t'], evidence: 'e', hint: 'h' };
   const g: GuardrailVerdict = { severity: 'none', reasons: [] };
-  const st: LoopState = 'HALTED';
   const ap: Approval = { id: '1', action: a, reasons: [], decision: 'approve', reason: 'ok' };
   expect(a.tool).toBe('run_shell');
-  expect(st).toBe('HALTED');
   expect(ap.decision).toBe('approve');
   expect(g.severity).toBe('none');
 });

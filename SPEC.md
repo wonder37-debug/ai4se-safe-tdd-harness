@@ -75,7 +75,7 @@
 - Parser 接口可插拔（`{parse(stdout,stderr): Feedback}`），暂只实现 `JestParser`。
 
 ### 3.7 AgentLoop（自研主循环状态机）
-- 状态：`RUNNING / APPROVAL_PENDING / EXECUTING / HALTED`（`types.ts` 导出 `LoopState` 联合型作规约可追溯；循环内部以控制流位置编码这些状态）。
+- 状态：`RUNNING / APPROVAL_PENDING / EXECUTING / HALTED`（循环内部以控制流位置编码这些状态）。【已变更 T11】`types.ts` 的 `LoopState` 联合型已删除：运行时从未维护该类型变量，四态仅由控制流位置编码，不再保留死类型导出。
 - 编排：见 §5 数据流。停机条件：`finish` 动作 / 绝对迭代上限 `MAX_ABS=20` / 连续 2 轮同一 `assertion.file:line` 失败（`HALTED(stuck)`）/ provider 不可恢复错误。
 - 边界：每轮迭代编号、状态、action、observation 全程记 `AGENT_LOG.md` 与内存事件队列。
 - 错误处理：任何未预期异常 → `HALTED(error)` 并把错误写事件流。
