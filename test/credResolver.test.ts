@@ -1,6 +1,6 @@
 import { resolveCredentials } from '../src/creds/credResolver';
 
-// ponytail: 凭据与配置 store 用最小手写 fake，避免引入整个实现类。
+// 凭据与配置 store 用最小手写 fake，避免引入整个实现类。
 function okCreds(key: string) {
   return {
     status: () => ({ present: true, source: 'encrypted-file' }),

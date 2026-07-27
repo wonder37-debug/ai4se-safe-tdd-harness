@@ -4,7 +4,7 @@
 //   2. .env API_KEY 或 process.env API_KEY → env-file / env（明文兜底，带告警）
 //   3. 均无 → null（调用方降级离线 ScriptedMock）
 // baseUrl/model 来源优先级：config.json > .env > process.env。
-// ponytail: 单函数决议，不引状态机。
+// 单函数决议，不引状态机。
 
 import { CredentialStore } from './credentialStore';
 import { ConfigStore } from './configStore';

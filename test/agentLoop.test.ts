@@ -20,7 +20,7 @@ function action(tool: string, args: any): string {
 
 async function tmp(): Promise<string> { return fs.mkdtemp(path.join(os.tmpdir(), 'loop-')); }
 
-// ponytail: runner is a .js file invoked by `node run-tests.js` — no Unix `sh` dependency,
+// runner is a .js file invoked by `node run-tests.js` — no Unix `sh` dependency,
 // no cmd-vs-bash quoting. `node` is the only host requirement (guaranteed: this is a Node project).
 // Resolves cross-platform on Windows PowerShell, Git Bash, and Linux CI.
 const RUNNER_PASS_WHEN_CORRECT = `const a = require('./add.js');

@@ -2,7 +2,7 @@
 // 共享一个 readline 接口：REPL 主提示与 AgentLoop 触发的 HITL 审批提示分时复用
 // （loop 运行期主提示不在 await，互不抢占）。任务完成后不退出，继续等待下一指令，
 // 直到 exit / quit。高危动作触发时由 CliApprovalGateway 悬停接收 y/n/文本反馈。
-// ponytail: readline 是 Node stdlib，不引依赖；REPL 胶水薄、委托已测模块。
+// readline 是 Node stdlib，不引依赖；REPL 胶水薄、委托已测模块。
 
 import * as readline from 'readline';
 import { CliApprovalGateway, AskFn } from '../approval/cliApprovalGateway';
