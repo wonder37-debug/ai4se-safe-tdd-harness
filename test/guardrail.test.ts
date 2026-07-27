@@ -58,3 +58,27 @@ test('Windows high verdict carries windows-* reason id', () => {
 test('Linux rm -rf / still high (no regression)', () => {
   expect(Guardrail.assess(sh('rm -rf /')).severity).toBe('high');
 });
+
+// ───────── 状态感知护栏：拒绝后的分拆命令绕过 ────────
+// 用户拒绝 rm -rf / 后，LLM 改用不带高危参数的 rm file.txt 继续删盘。
+// lastDenied=true 时任何删除尝试强制升级 high；无拒绝状态时保持原评级。
+
+test('after deny, plain rm file.txt escalates to high', () => {
+  expect(Guardrail.assess(sh('rm file.txt'), { lastDenied: true }).severity).toBe('high');
+});
+test('after deny, plain del a.txt escalates to high', () => {
+  expect(Guardrail.assess(sh('del a.txt'), { lastDenied: true }).severity).toBe('high');
+});
+test('after deny, escalated verdict carries deny-escalation reason', () => {
+  const v = Guardrail.assess(sh('rm file.txt'), { lastDenied: true });
+  expect(v.reasons.join(' ')).toMatch(/deny-escalation/);
+});
+test('after deny, non-deletion command is unaffected', () => {
+  expect(Guardrail.assess(sh('ls -la'), { lastDenied: true }).severity).toBe('none');
+});
+test('without deny state, rm file.txt stays low (no approval fatigue)', () => {
+  expect(Guardrail.assess(sh('rm file.txt'), { lastDenied: false }).severity).toBe('low');
+});
+test('state omitted keeps legacy behavior (API compatible)', () => {
+  expect(Guardrail.assess(sh('rm file.txt')).severity).toBe('low');
+});

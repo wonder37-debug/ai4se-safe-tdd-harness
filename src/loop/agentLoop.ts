@@ -5,7 +5,7 @@ import { ApprovalGateway } from '../approval/approvalGateway';
 import { FeedbackClassifier } from '../feedback/feedbackClassifier';
 import { MemoryStore } from '../memory/memoryStore';
 import { ActionProtocol } from '../protocol/actionProtocol';
-import { Action, Message, Observation } from '../types';
+import { Action, Message, Observation, SessionState } from '../types';
 import { EventSink, noopSink } from './eventSink';
 
 export interface LoopDeps {
@@ -26,6 +26,8 @@ type HaltReason = 'finish' | 'cap' | 'stuck' | 'provider_error';
 export class AgentLoop {
   private messages: Message[];
   private sink: EventSink;
+  // 会话状态：供 Guardrail 做状态感知评估（拒绝后的删除尝试动态升级 high）
+  private session: SessionState = { lastDenied: false };
   constructor(private deps: LoopDeps) {
     this.sink = deps.sink ?? noopSink;
     const sys = deps.systemPrompt + (deps.memory.systemPrompt() ? '\n\n' + deps.memory.systemPrompt() : '');
@@ -59,13 +61,14 @@ export class AgentLoop {
         return { haltReason: 'finish', iterations: iter };
       }
 
-      // 护栏
-      const verdict = this.deps.guardrail.assess(action);
+      // 护栏（携带会话状态：上一轮刚被拒绝时，删除类命令被动态升级为 high）
+      const verdict = this.deps.guardrail.assess(action, this.session);
       let effective: Action = action;
       if (verdict.severity === 'high') {
         const dec = await this.deps.approval.request(action, verdict.reasons);
         this.sink.emit({ type: 'approval_decision', payload: dec, iter });
         if (dec.decision === 'deny') {
+          this.session.lastDenied = true; // 记录拒绝：下一轮删除尝试将被强制拦截
           this.messages.push({ role: 'user', content: `Observation: DENIED: ${dec.reason} (reasons: ${verdict.reasons.join('; ')})` });
           continue;
         }
@@ -73,7 +76,8 @@ export class AgentLoop {
         this.messages.push({ role: 'user', content: `Observation: WARN(low): ${verdict.reasons.join('; ')}` });
       }
 
-      // 执行
+      // 执行（动作已通过门禁：清除“刚被拒绝”状态，恢复日常无打扰评级）
+      this.session.lastDenied = false;
       const ctx: ToolContext = { cwd: this.deps.cwd };
       const obs = await this.deps.registry.dispatch(effective, ctx);
 

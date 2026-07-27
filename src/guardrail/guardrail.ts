@@ -1,4 +1,4 @@
-import { Action, GuardrailVerdict, Severity } from '../types';
+import { Action, GuardrailVerdict, Severity, SessionState } from '../types';
 import { parse as shellParse } from 'shell-quote';
 import patterns from './dangerPatterns.json';
 
@@ -64,12 +64,25 @@ function matchWindows(raw: string): { id: string; severity: Severity; reason: st
   return null;
 }
 
+// 状态感知护栏：上一轮动作刚被用户拒绝（Deny）时，任何文件删除尝试
+// （含看似无害的 rm file.txt / del a.txt）都升级为 high，堵住“拒绝后分拆命令绕过”。
+// 仅在 lastDenied=true 时生效；正常编码状态下单文件删除仍保持 low/none，防审批疲劳。
+function isDeletionAttempt(raw: string): boolean {
+  return /\b(rm|unlink|shred|del|erase|rmdir|rd|remove-item|ri)\b/.test(raw);
+}
+
 export const Guardrail = {
-  assess(action: Action): GuardrailVerdict {
+  assess(action: Action, state?: SessionState): GuardrailVerdict {
     if (action.tool !== 'run_shell' && action.tool !== 'run_tests') return { severity: 'none', reasons: [] };
     const cmd = String(action.args.command ?? '');
+    const raw = cmd.toLowerCase();
+    // 状态感知升级优先判定：刚被拒绝后的任何删除尝试强制 high
+    if (state?.lastDenied && isDeletionAttempt(raw)) {
+      const p = pick('deny-escalation');
+      return { severity: p.severity, reasons: [`${p.id}: ${p.reason}`] };
+    }
     // Windows 删除命令优先判定（tokenize 前按原始串匹配，精准且不受反斜杠影响）
-    const winHit = matchWindows(cmd.toLowerCase());
+    const winHit = matchWindows(raw);
     if (winHit) return { severity: winHit.severity, reasons: [`${winHit.id}: ${winHit.reason}`] };
     let tokens: string[];
     try { tokens = toTokens(cmd); }

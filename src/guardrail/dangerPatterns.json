@@ -20,5 +20,7 @@
   { "id": "cred-exfil", "severity": "high",
     "reason": "outbound request carrying auth/secret header" },
   { "id": "plain-rm", "severity": "low",
-    "reason": "single-target rm (no -rf)" }
+    "reason": "single-target rm (no -rf)" },
+  { "id": "deny-escalation", "severity": "high",
+    "reason": "file deletion attempted right after a denied action (split-command bypass)" }
 ]

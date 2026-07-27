@@ -25,6 +25,10 @@ export interface Feedback {
 export type Severity = 'none' | 'low' | 'high';
 export interface GuardrailVerdict { severity: Severity; reasons: string[]; }
 
+// 会话状态：由 AgentLoop 维护、传递给 Guardrail 做状态感知评估。
+// lastDenied=true 表示上一轮动作刚被用户拒绝（Deny）。
+export interface SessionState { lastDenied: boolean; }
+
 export interface ApprovalRequest { id: string; action: Action; reasons: string[]; }
 export interface ApprovalDecision { decision: 'approve' | 'deny'; reason: string; }
 export type Approval = ApprovalRequest & Partial<ApprovalDecision>;

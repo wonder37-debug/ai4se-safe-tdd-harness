@@ -4,7 +4,8 @@ import { ToolRegistry } from '../src/tools/tool';
 import { fileTools } from '../src/tools/fileTools';
 import { shellTools } from '../src/tools/shellTools';
 import { Guardrail } from '../src/guardrail/guardrail';
-import { MockApprovalGateway } from '../src/approval/approvalGateway';
+import { MockApprovalGateway, ApprovalGateway } from '../src/approval/approvalGateway';
+import { Action, ApprovalDecision } from '../src/types';
 import { FeedbackClassifier } from '../src/feedback/feedbackClassifier';
 import { JestParser } from '../src/feedback/jestParser';
 import { MemoryStore } from '../src/memory/memoryStore';
@@ -98,4 +99,67 @@ test('stuck halt: same assertion point failing twice -> HALTED(stuck)', async ()
   });
   const res = await loop.run();
   expect(res.haltReason).toBe('stuck');
+});
+
+// ───────── 状态感知护栏：拒绝后分拆命令绕过的闭环验证 ────────
+
+// 记录每次审批请求的 action 与 reasons，便于断言动态升级是否触发
+class RecordingApprovalGateway implements ApprovalGateway {
+  requests: { action: Action; reasons: string[] }[] = [];
+  constructor(private inner: MockApprovalGateway) {}
+  async request(action: Action, reasons: string[]): Promise<ApprovalDecision> {
+    this.requests.push({ action, reasons });
+    return this.inner.request(action, reasons);
+  }
+}
+
+test('state-aware guardrail: after deny, plain rm is escalated to high and intercepted', async () => {
+  const cwd = await tmp();
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  const llm = new ScriptedMock([
+    action('run_shell', { command: 'rm -rf /' }),    // 高危 → 用户拒绝
+    action('run_shell', { command: 'rm file.txt' }), // 分拆绕过尝试 → 动态升级 high → 再拦截
+    action('finish', {}),
+  ]);
+  const approval = new RecordingApprovalGateway(new MockApprovalGateway([
+    { decision: 'deny', reason: 'blocked' },
+    { decision: 'deny', reason: 'blocked again' },
+  ]));
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval,
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x',
+  });
+  const res = await loop.run();
+  expect(res.haltReason).toBe('finish');
+  // rm file.txt 平时仅 low（不进审批）；拒绝后被升级 high，因此共 2 次审批请求
+  expect(approval.requests).toHaveLength(2);
+  expect(approval.requests[1].action.args.command).toBe('rm file.txt');
+  expect(approval.requests[1].reasons.join(' ')).toMatch(/deny-escalation/);
+});
+
+test('state-aware guardrail: state clears after a normal executed action (no approval fatigue)', async () => {
+  const cwd = await tmp();
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  const llm = new ScriptedMock([
+    action('run_shell', { command: 'rm -rf /' }),     // 高危 → 拒绝（lastDenied=true）
+    action('list_dir', { path: '.' }),                // 正常动作执行 → 清除拒绝状态
+    action('run_shell', { command: 'rm ghost.txt' }), // 恢复 low，不再触发审批
+    action('finish', {}),
+  ]);
+  const approval = new RecordingApprovalGateway(new MockApprovalGateway([
+    { decision: 'deny', reason: 'blocked' },
+  ]));
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval,
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x',
+  });
+  const res = await loop.run();
+  expect(res.haltReason).toBe('finish');
+  // 仅首次 rm -rf / 触发审批；中隔正常动作后 rm ghost.txt 保持 low 无打扰
+  expect(approval.requests).toHaveLength(1);
+  expect(approval.requests[0].action.args.command).toBe('rm -rf /');
 });
