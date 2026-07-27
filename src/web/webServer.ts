@@ -75,13 +75,9 @@ export async function startWebServer(opts: WebServerOpts): Promise<{ server: htt
         }
         const b = await body(req);
         taskRunning = true;
-        // 仅当 loopFactory 短路返回 provider_error（未走 AgentLoop、内核未 emit halt）时，
-        // 由 web 补 emit 一条 halt；正常 finish/cap/stuck 内核已 emit，不再重复。
-        opts.loopFactory(b.task, b.cwd).then((r) => {
-          if (r.haltReason === 'provider_error') {
-            opts.eventStore.emit({ type: 'halt', payload: { reason: 'provider_error', iterations: r.iterations }, iter: 0 });
-          }
-        }).finally(() => { taskRunning = false; });
+        // halt 事件由 AgentLoop 的 sink 统一发出（含 provider_error，见 agentLoop.ts），
+        // web 层不再重复补 emit，避免事件流出现双 halt。
+        opts.loopFactory(b.task, b.cwd).finally(() => { taskRunning = false; });
         res.end(JSON.stringify({ started: true }));
       } else if (req.method === 'GET') {
         // 静态前端面板（仅服务于 public/ 内文件，防路径穿越）

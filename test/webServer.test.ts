@@ -123,7 +123,7 @@ describe('HARNESS_TOKEN 鉴权', () => {
   });
 });
 
-test('POST /api_task 正常 finish 不再双 emit halt（仅 provider_error 才补 emit）', async () => {
+test('POST /api_task 正常 finish 不双 emit halt（内核 sink 统一发出，web 不补）', async () => {
   // stub loopFactory 返回 finish 且不自行 emit（模拟 AgentLoop 已 emit 的场景）
   // → webServer 不应再补一条 halt
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'web2-'));
@@ -143,21 +143,26 @@ test('POST /api_task 正常 finish 不再双 emit halt（仅 provider_error 才�
   } finally { srv.server.close(); }
 });
 
-test('POST /api/task provider_error 时 web 补 emit 一条 halt（短路上未走 AgentLoop）', async () => {
+test('POST /api/task provider_error：halt 仅由内核 emit 一次，web 不重复补（T9）', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'web3-'));
   const store = new EventStore();
   const srv = await startWebServer({
     port: 0, eventStore: store, approval: new HttpApprovalGateway(),
     creds: new EncryptedFileStore(path.join(dir, 'c.enc')),
     config: new JsonConfigStore(path.join(dir, 'config.json')),
-    loopFactory: async () => ({ haltReason: 'provider_error', iterations: 0 }),
+    // 模拟真实 makeLoopFactory：AgentLoop 内部遭遇 provider 异常时已经通过 sink emit 了 halt
+    loopFactory: async () => {
+      store.emit({ type: 'halt', payload: { reason: 'provider_error', error: 'provider_error: boom' }, iter: 1 });
+      return { haltReason: 'provider_error', iterations: 1 };
+    },
   });
   const port = (srv.server.address() as any).port;
   try {
     await req('POST', port, '/api/task', { task: 't', cwd: dir });
+    await new Promise((r) => setTimeout(r, 50)); // 等后台 then 链跑完
     const evs = await req('GET', port, '/api/events?since=0');
     const halts = (evs.body as any[]).filter(e => e.type === 'halt');
-    expect(halts.length).toBe(1); // provider_error 未走内核，web 补 emit
+    expect(halts.length).toBe(1); // 仅内核一条，web 不重复补
     expect(halts[0].payload.reason).toBe('provider_error');
   } finally { srv.server.close(); }
 });
