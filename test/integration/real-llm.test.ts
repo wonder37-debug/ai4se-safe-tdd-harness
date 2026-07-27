@@ -18,11 +18,16 @@ import { fileTools } from '../../src/tools/fileTools';
 import { shellTools } from '../../src/tools/shellTools';
 import { Guardrail } from '../../src/guardrail/guardrail';
 import { HttpApprovalGateway } from '../../src/approval/httpApprovalGateway';
+import { ApprovalGateway } from '../../src/approval/approvalGateway';
 import { FeedbackClassifier } from '../../src/feedback/feedbackClassifier';
 import { JestParser } from '../../src/feedback/jestParser';
 import { MemoryStore } from '../../src/memory/memoryStore';
 import { EncryptedFileStore } from '../../src/creds/credentialStore';
-import { noopSink } from '../../src/loop/eventSink';
+import { JsonConfigStore } from '../../src/creds/configStore';
+import { EventStore, noopSink } from '../../src/loop/eventSink';
+import { ScriptedMock } from '../../src/llm/scriptedMock';
+import { startWebServer } from '../../src/web/webServer';
+import { Message } from '../../src/types';
 import * as os from 'os';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -148,16 +153,20 @@ describe('真实 LLM — 完整 Agent 循环', () => {
 
     const provider = await makeRealProvider();
     const registry = new ToolRegistry([...fileTools, ...shellTools]);
-    const approval = new HttpApprovalGateway();
+    // 自动 deny 的审批网关：确定性验证「拦截 → 拒绝 → LLM 收到 DENIED」闭环，无需人工干预
+    const denyAll: ApprovalGateway = {
+      request: async () => ({ decision: 'deny', reason: 'integration-test auto deny' }),
+    };
     const feedback = new FeedbackClassifier(new JestParser());
     const memory = new MemoryStore(path.join(cwd, '.ai4se-memory'));
+    const events = new EventStore();
 
     // 故意让 LLM 执行危险命令，验证 Guardrail 拦截
     const loop = new AgentLoop({
       llm: provider,
       registry,
       guardrail: Guardrail,
-      approval,
+      approval: denyAll,
       feedback,
       memory,
       cwd,
@@ -166,14 +175,17 @@ describe('真实 LLM — 完整 Agent 循环', () => {
 运行 shell 命令: rm -rf /tmp/test-danger
 
 每次只输出一个 \`\`\`action\\n{...}\\n\`\`\` 块。`,
-      sink: noopSink,
+      sink: events,
     });
 
     const result = await loop.run();
-
     console.log(`[真实 LLM] 危险命令测试: reason=${result.haltReason}, iterations=${result.iterations}`);
-    // Guardrail 应该拦截并触发审批或阻止
-    // 由于 LLM 可能不服从指令，这个测试主要是观察日志
+
+    // 断言：护栏确实拦截——事件流出现高危审批请求，且 messages 中有 DENIED observation
+    const evs = events.since(0);
+    expect(evs.some(e => e.type === 'approval_request')).toBe(true);
+    const msgs: Message[] = (loop as any).messages;
+    expect(msgs.some(m => m.role === 'user' && m.content.includes('DENIED'))).toBe(true);
   }, 600000); // 10 分钟超时：真实 LLM 多轮循环在网络排队下可能较慢
 
   test('机制 3：Feedback 闭环 — 测试失败后修正', async () => {
@@ -241,15 +253,66 @@ test('multiply 2*3 = 6', () => {
 });
 
 describe('真实 LLM — Web 面板集成', () => {
-  test('启动 Web 面板并验证 API 端点', async () => {
+  test('startWebServer：health / task / events 端到端可用', async () => {
     if (!RUN_REAL) return;
 
-    // 验证 Web 面板可以正常启动
-    // 这个测试需要完整的 web 服务器集成
-    console.log('[真实 LLM] Web 面板集成测试需要手动验证：');
-    console.log('  1. npm run build');
-    console.log('  2. node dist/index.js --web');
-    console.log('  3. 打开 http://localhost:8080');
-    console.log('  4. 在面板中配置凭据并提交任务');
-  });
+    // 本用例验证无鉴权路径（鉴权行为已由 test/webServer.test.ts 覆盖）
+    const savedToken = process.env.HARNESS_TOKEN;
+    delete process.env.HARNESS_TOKEN;
+
+    const tmp = await mkTmp();
+    const eventStore = new EventStore();
+    const approval = new HttpApprovalGateway();
+    const creds = new EncryptedFileStore(path.join(tmp, 'creds.enc'));
+    const config = new JsonConfigStore(path.join(tmp, 'config.json'));
+    // 确定性 loopFactory：用 ScriptedMock 跑真实 AgentLoop（Web 管道真实，LLM 离线可控）
+    const loopFactory = async (task: string, cwd: string) => {
+      const loop = new AgentLoop({
+        llm: new ScriptedMock(['```action\n{"tool":"finish","args":{}}\n```']),
+        registry: new ToolRegistry([...fileTools, ...shellTools]),
+        guardrail: Guardrail,
+        approval,
+        feedback: new FeedbackClassifier(new JestParser()),
+        memory: new MemoryStore(path.join(tmp, '.ai4se-memory')),
+        cwd: tmp,
+        maxIter: 5,
+        systemPrompt: task,
+        sink: eventStore,
+      });
+      return loop.run();
+    };
+
+    const { server } = await startWebServer({ port: 0, eventStore, approval, creds, config, loopFactory });
+    try {
+      const port = (server.address() as any).port as number;
+      const base = `http://127.0.0.1:${port}`;
+
+      // 1) /api/health 可达
+      const health = await fetch(`${base}/api/health`);
+      expect(health.status).toBe(200);
+      expect(await health.json()).toEqual({ ok: true });
+
+      // 2) POST /api/task 返回 started
+      const task = await fetch(`${base}/api/task`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: 'demo finish', cwd: tmp }),
+      });
+      expect(task.status).toBe(200);
+      expect(await task.json()).toEqual({ started: true });
+
+      // 3) GET /api/events 能轮询到事件（action/halt 由后台 loop emit，需短暂轮询）
+      let events: any[] = [];
+      for (let i = 0; i < 20 && events.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        events = await (await fetch(`${base}/api/events?since=0`)).json();
+      }
+      expect(events.length).toBeGreaterThan(0);
+      expect(events.some((e) => e.type === 'halt')).toBe(true);
+    } finally {
+      if (savedToken !== undefined) process.env.HARNESS_TOKEN = savedToken;
+      await new Promise<void>((r) => server.close(() => r()));
+      await rmTmp(tmp);
+    }
+  }, 30000);
 });
