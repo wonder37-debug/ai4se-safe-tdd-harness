@@ -9,6 +9,7 @@ import { Action, ApprovalDecision } from '../src/types';
 import { FeedbackClassifier } from '../src/feedback/feedbackClassifier';
 import { JestParser } from '../src/feedback/jestParser';
 import { MemoryStore } from '../src/memory/memoryStore';
+import { EventStore } from '../src/loop/eventSink';
 import * as os from 'os';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -99,6 +100,32 @@ test('stuck halt: same assertion point failing twice -> HALTED(stuck)', async ()
   });
   const res = await loop.run();
   expect(res.haltReason).toBe('stuck');
+});
+
+// ───────── Task 4：审批前先 emit approval_request（SPEC §6） ────────
+
+test('high action emits approval_request before approval_decision', async () => {
+  const cwd = await tmp();
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  const llm = new ScriptedMock([
+    action('run_shell', { command: 'rm -rf /' }),
+    action('finish', {}),
+  ]);
+  const store = new EventStore();
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([{ decision: 'deny', reason: 'no' }]),
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x', sink: store,
+  });
+  await loop.run();
+  const evs = store.all();
+  const reqIdx = evs.findIndex(e => e.type === 'approval_request');
+  const decIdx = evs.findIndex(e => e.type === 'approval_decision');
+  expect(reqIdx).toBeGreaterThanOrEqual(0);          // 审批请求事件已发出
+  expect(decIdx).toBeGreaterThan(reqIdx);            // 裁决事件紧随其后
+  expect(evs[reqIdx].payload.action.args.command).toBe('rm -rf /');
+  expect(evs[reqIdx].payload.reasons.join(' ')).toMatch(/recursive-delete/);
 });
 
 // ───────── 状态感知护栏：拒绝后分拆命令绕过的闭环验证 ────────

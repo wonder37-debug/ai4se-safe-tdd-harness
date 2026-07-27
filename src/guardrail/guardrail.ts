@@ -20,9 +20,18 @@ function toTokens(cmd: string): string[] {
 
 function join(tokens: string[]): string { return tokens.join(' '); }
 
+// 管道入 shell 判定：token 序列中 '|' 的下一个 token 为 sh/bash 才算，
+// 避免 'echo curly | sh' 被子串 'curl' 误报（误报源头在 has 的子串兑底，已移除）。
+function pipeToShell(tokens: string[]): boolean {
+  return tokens.some((t, i) => t === '|' && (tokens[i + 1] === 'sh' || tokens[i + 1] === 'bash'));
+}
+
 function match(tokens: string[]): { id: string; severity: Severity; reason: string } | null {
   const s = join(tokens);
-  const has = (...needles: string[]) => needles.every(n => tokens.includes(n) || s.includes(n));
+  // 仅整词 token 匹配：命令名/标志不再用 s.includes 兑底，
+  // 消除 echo issue 命中 'su'、echo curly 命中 'curl' 一类子串误报；
+  // token 层仍能揭穿 r""m 一类引号混淆（shell-quote 已归一化）。
+  const has = (...needles: string[]) => needles.every(n => tokens.includes(n));
 
   // 递归/强制删除：出现 -rf / --no-preserve-root / （-r 且 -f）即 high，
   // 不再强制根路径前缀（rm -rf node_modules 同样不可逆）；/etc、/usr 作补充匹配。
@@ -32,7 +41,7 @@ function match(tokens: string[]): { id: string; severity: Severity; reason: stri
     return pick('recursive-delete');
   if (has('sudo') || has('su') || has('chmod') && has('777'))
     return pick('privilege-escalation');
-  if ((has('curl') || has('wget')) && (s.includes('| sh') || s.includes('|sh') || s.includes('| bash') || s.includes('|bash')))
+  if ((has('curl') || has('wget')) && pipeToShell(tokens))
     return pick('remote-script-exec');
   if (s.includes('drop table') || s.includes('drop database') || s.includes('truncate'))
     return pick('db-destroy');
