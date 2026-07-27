@@ -56,6 +56,10 @@ export class AgentLoop {
         continue;
       }
       const action = acts[0];
+      // 多 action 不再静默丢弃：回灌告警让 LLM 知道其余块被忽略，避免它误以为已全部执行
+      if (acts.length > 1) {
+        this.messages.push({ role: 'user', content: `Observation: 仅执行首个 action，忽略其余 ${acts.length - 1} 个（每轮只允许一个 action 块）` });
+      }
       this.sink.emit({ type: 'action', payload: action, iter });
 
       if (action.tool === 'finish') {

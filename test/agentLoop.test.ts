@@ -190,3 +190,28 @@ test('state-aware guardrail: state clears after a normal executed action (no app
   expect(approval.requests).toHaveLength(1);
   expect(approval.requests[0].action.args.command).toBe('rm -rf /');
 });
+
+// ───────── Task 12：多 action 丢弃补告警 ─────────
+
+test('同一回复含多个 action 块：仅执行首个，messages 补 warn observation', async () => {
+  const cwd = await tmp();
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  // 单条回复里塞两个 action 块：只有首个 write_file 应被执行
+  const multi = action('write_file', { path: 'a.txt', content: '1' }) + '\n' +
+                action('write_file', { path: 'b.txt', content: '2' });
+  const llm = new ScriptedMock([multi, action('finish', {})]);
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([]),
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x',
+  });
+  const res = await loop.run();
+  expect(res.haltReason).toBe('finish');
+  // 首个执行、其余丢弃
+  await expect(fs.access(path.join(cwd, 'a.txt'))).resolves.toBeUndefined();
+  await expect(fs.access(path.join(cwd, 'b.txt'))).rejects.toThrow();
+  // 丢弃不再静默：messages 中出现告警 observation（忽略其余 1 个）
+  const msgs: { role: string; content: string }[] = (loop as any).messages;
+  expect(msgs.some(m => m.role === 'user' && /仅执行首个 action.*忽略其余 1 个/.test(m.content))).toBe(true);
+});
