@@ -24,7 +24,11 @@ function match(tokens: string[]): { id: string; severity: Severity; reason: stri
   const s = join(tokens);
   const has = (...needles: string[]) => needles.every(n => tokens.includes(n) || s.includes(n));
 
-  if (has('rm') && (has('-rf') || has('--no-preserve-root') || has('-r', '-f')) && (has('/') || has('/*') || s.includes('/etc') || s.includes('/usr')))
+  // 递归/强制删除：出现 -rf / --no-preserve-root / （-r 且 -f）即 high，
+  // 不再强制根路径前缀（rm -rf node_modules 同样不可逆）；/etc、/usr 作补充匹配。
+  if (has('rm') && (has('-rf') || has('--no-preserve-root') || (has('-r') && has('-f'))))
+    return pick('recursive-delete');
+  if (has('rm') && (has('-r') || has('-f')) && (s.includes('/etc') || s.includes('/usr')))
     return pick('recursive-delete');
   if (has('sudo') || has('su') || has('chmod') && has('777'))
     return pick('privilege-escalation');
