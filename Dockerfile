@@ -16,6 +16,8 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
+# 非 root 运行：node:20-bookworm-slim 自带 node 用户（uid 1000），降低容器逃逸面
+USER node
 EXPOSE 8080
 # 容器必须直接起 web 面板，故显式带 --web
 CMD ["node", "dist/index.js", "--web"]

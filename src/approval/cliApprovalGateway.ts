@@ -43,7 +43,7 @@ export class CliApprovalGateway implements ApprovalGateway {
 
   private async ask(prompt: string): Promise<string> {
     if (this.askFn) return this.askFn(prompt);
-    // ponytail: 无注入 ask 时安全拒否——非交互场景（如 pipe stdin）不应悬停
+    // 无注入 ask 时安全拒否——非交互场景（如 pipe stdin）不应悬停
     return '';
   }
 }

@@ -13,3 +13,7 @@ AI4SE_Final_Project_A_Coding_Agent_Harness.md
 
 # IDE 本地配置
 .idea/
+
+# Qoder 本地会话数据与 git worktree 隔离区，不纳入仓库
+.qoder/
+.worktrees/

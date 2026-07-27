@@ -32,7 +32,8 @@ export interface SessionState { lastDenied: boolean; }
 export interface ApprovalRequest { id: string; action: Action; reasons: string[]; }
 export interface ApprovalDecision { decision: 'approve' | 'deny'; reason: string; }
 export type Approval = ApprovalRequest & Partial<ApprovalDecision>;
-export type LoopState = 'RUNNING' | 'APPROVAL_PENDING' | 'EXECUTING' | 'HALTED';
+// 已变更（T11）：删除 LoopState 死类型——循环四态由 AgentLoop 控制流位置编码，
+// 运行时从未维护该类型变量，保留导出只会误导读者（见 SPEC §3.7）。
 
 export type EventType = 'action' | 'observation' | 'approval_request' | 'approval_decision' | 'halt';
 export interface Event { id: number; type: EventType; payload: any; iter: number; }

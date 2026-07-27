@@ -1,6 +1,6 @@
 // CLI 参数解析：纯函数，离线可单测。
 // 模式优先级：显式 flag > 裸位置参数 > interactive 默认。
-// ponytail: 一个函数搞定，不引入 commander/yargs。
+// 一个函数搞定，不引入 commander/yargs。
 
 export type CliMode = 'web' | 'task' | 'interactive' | 'help';
 

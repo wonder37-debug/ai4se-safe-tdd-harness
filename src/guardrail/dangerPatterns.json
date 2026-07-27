@@ -1,6 +1,6 @@
 [
   { "id": "recursive-delete", "severity": "high",
-    "reason": "recursive forced deletion" },
+    "reason": "recursive/forced deletion (any target path)" },
   { "id": "windows-del-recursive", "severity": "high",
     "reason": "Windows recursive/forced deletion (del /s, del /f)" },
   { "id": "windows-rmdir-recursive", "severity": "high",

@@ -30,11 +30,13 @@ export class AgentLoop {
   private session: SessionState = { lastDenied: false };
   constructor(private deps: LoopDeps) {
     this.sink = deps.sink ?? noopSink;
-    const sys = deps.systemPrompt + (deps.memory.systemPrompt() ? '\n\n' + deps.memory.systemPrompt() : '');
-    this.messages = [{ role: 'system', content: sys }, { role: 'user', content: 'complete the task using tools' }];
+    this.messages = [{ role: 'system', content: deps.systemPrompt }, { role: 'user', content: 'complete the task using tools' }];
   }
 
   async run(): Promise<{ haltReason: HaltReason; iterations: number }> {
+    // memory 注记为异步读取（Task 10），构造器无法 await，改在首次运行时拼入 system prompt
+    const mem = await this.deps.memory.systemPrompt();
+    if (mem) this.messages[0].content += '\n\n' + mem;
     let iter = 0;
     let lastFailKey: string | null = null;
     let sameCount = 0;
@@ -54,6 +56,10 @@ export class AgentLoop {
         continue;
       }
       const action = acts[0];
+      // 多 action 不再静默丢弃：回灌告警让 LLM 知道其余块被忽略，避免它误以为已全部执行
+      if (acts.length > 1) {
+        this.messages.push({ role: 'user', content: `Observation: 仅执行首个 action，忽略其余 ${acts.length - 1} 个（每轮只允许一个 action 块）` });
+      }
       this.sink.emit({ type: 'action', payload: action, iter });
 
       if (action.tool === 'finish') {
@@ -65,6 +71,8 @@ export class AgentLoop {
       const verdict = this.deps.guardrail.assess(action, this.session);
       let effective: Action = action;
       if (verdict.severity === 'high') {
+        // SPEC §6：先广播审批请求，再悬停等待裁决（web/CLI 前端据此展示待审批项）
+        this.sink.emit({ type: 'approval_request', payload: { action, reasons: verdict.reasons }, iter });
         const dec = await this.deps.approval.request(action, verdict.reasons);
         this.sink.emit({ type: 'approval_decision', payload: dec, iter });
         if (dec.decision === 'deny') {

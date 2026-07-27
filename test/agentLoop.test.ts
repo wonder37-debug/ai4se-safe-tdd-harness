@@ -9,6 +9,7 @@ import { Action, ApprovalDecision } from '../src/types';
 import { FeedbackClassifier } from '../src/feedback/feedbackClassifier';
 import { JestParser } from '../src/feedback/jestParser';
 import { MemoryStore } from '../src/memory/memoryStore';
+import { EventStore } from '../src/loop/eventSink';
 import * as os from 'os';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -19,7 +20,7 @@ function action(tool: string, args: any): string {
 
 async function tmp(): Promise<string> { return fs.mkdtemp(path.join(os.tmpdir(), 'loop-')); }
 
-// ponytail: runner is a .js file invoked by `node run-tests.js` — no Unix `sh` dependency,
+// runner is a .js file invoked by `node run-tests.js` — no Unix `sh` dependency,
 // no cmd-vs-bash quoting. `node` is the only host requirement (guaranteed: this is a Node project).
 // Resolves cross-platform on Windows PowerShell, Git Bash, and Linux CI.
 const RUNNER_PASS_WHEN_CORRECT = `const a = require('./add.js');
@@ -101,6 +102,32 @@ test('stuck halt: same assertion point failing twice -> HALTED(stuck)', async ()
   expect(res.haltReason).toBe('stuck');
 });
 
+// ───────── Task 4：审批前先 emit approval_request（SPEC §6） ────────
+
+test('high action emits approval_request before approval_decision', async () => {
+  const cwd = await tmp();
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  const llm = new ScriptedMock([
+    action('run_shell', { command: 'rm -rf /' }),
+    action('finish', {}),
+  ]);
+  const store = new EventStore();
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([{ decision: 'deny', reason: 'no' }]),
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x', sink: store,
+  });
+  await loop.run();
+  const evs = store.all();
+  const reqIdx = evs.findIndex(e => e.type === 'approval_request');
+  const decIdx = evs.findIndex(e => e.type === 'approval_decision');
+  expect(reqIdx).toBeGreaterThanOrEqual(0);          // 审批请求事件已发出
+  expect(decIdx).toBeGreaterThan(reqIdx);            // 裁决事件紧随其后
+  expect(evs[reqIdx].payload.action.args.command).toBe('rm -rf /');
+  expect(evs[reqIdx].payload.reasons.join(' ')).toMatch(/recursive-delete/);
+});
+
 // ───────── 状态感知护栏：拒绝后分拆命令绕过的闭环验证 ────────
 
 // 记录每次审批请求的 action 与 reasons，便于断言动态升级是否触发
@@ -162,4 +189,29 @@ test('state-aware guardrail: state clears after a normal executed action (no app
   // 仅首次 rm -rf / 触发审批；中隔正常动作后 rm ghost.txt 保持 low 无打扰
   expect(approval.requests).toHaveLength(1);
   expect(approval.requests[0].action.args.command).toBe('rm -rf /');
+});
+
+// ───────── Task 12：多 action 丢弃补告警 ─────────
+
+test('同一回复含多个 action 块：仅执行首个，messages 补 warn observation', async () => {
+  const cwd = await tmp();
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  // 单条回复里塞两个 action 块：只有首个 write_file 应被执行
+  const multi = action('write_file', { path: 'a.txt', content: '1' }) + '\n' +
+                action('write_file', { path: 'b.txt', content: '2' });
+  const llm = new ScriptedMock([multi, action('finish', {})]);
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([]),
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x',
+  });
+  const res = await loop.run();
+  expect(res.haltReason).toBe('finish');
+  // 首个执行、其余丢弃
+  await expect(fs.access(path.join(cwd, 'a.txt'))).resolves.toBeUndefined();
+  await expect(fs.access(path.join(cwd, 'b.txt'))).rejects.toThrow();
+  // 丢弃不再静默：messages 中出现告警 observation（忽略其余 1 个）
+  const msgs: { role: string; content: string }[] = (loop as any).messages;
+  expect(msgs.some(m => m.role === 'user' && /仅执行首个 action.*忽略其余 1 个/.test(m.content))).toBe(true);
 });

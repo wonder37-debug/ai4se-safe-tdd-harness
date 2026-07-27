@@ -2,9 +2,25 @@ image: node:20-bookworm-slim
 
 stages:
   - test
+  - build
 
 unit-test:
   stage: test
   script:
     - npm ci
-    - npm test
+    - npm run build          # tsc 类型门禁
+    - npx jest --coverage    # 输出覆盖率报告（阈值暂不强制失败，仅报告）
+  coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
+  artifacts:
+    when: always
+    paths:
+      - coverage/
+    expire_in: 1 week
+
+# build 校验：确保 tsc 产物完整可发布（受 runner 能力限制不做 docker build，仅编译校验）
+docker-build:
+  stage: build
+  script:
+    - npm ci
+    - npm run build
+    - test -f dist/index.js  # 编译产物存在性校验

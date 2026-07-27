@@ -7,7 +7,7 @@ export interface CredentialStore {
   status(): { present: boolean; source: string };
   resolve(masterPassword: string): Promise<{ key: string; source: string }>;
   set(key: string, masterPassword: string): Promise<void>;
-  clear(): void;
+  clear(): Promise<void>;
 }
 
 const ALGO = 'aes-256-gcm';
@@ -46,8 +46,8 @@ export class EncryptedFileStore implements CredentialStore {
     return { key, source: 'encrypted-file' };
   }
 
-  clear(): void {
-    const { rmSync } = require('fs');
-    if (existsSync(this.file)) rmSync(this.file, { force: true });
+  // Task 10：统一 fs/promises 异步删除（force 兼容文件不存在）
+  async clear(): Promise<void> {
+    await fs.rm(this.file, { force: true });
   }
 }

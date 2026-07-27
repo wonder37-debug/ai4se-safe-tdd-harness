@@ -14,6 +14,27 @@ test('run_shell captures stdout and exitCode 0', async () => {
   expect((r.stdout ?? '').trim()).toBe('hello');
 });
 
+// ───────── Task 14：args.command 缺省校验 ─────────
+test('run_shell / run_tests reject missing or non-string command without spawning', async () => {
+  const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'h-'));
+  const reg = new ToolRegistry([...shellTools]);
+  const cp = require('child_process');
+  const spy = jest.spyOn(cp, 'exec');
+  try {
+    for (const tool of ['run_shell', 'run_tests'] as const) {
+      for (const args of [{}, { command: 42 }, { command: '   ' }]) {
+        const r = await reg.dispatch({ tool, args: args as any }, { cwd });
+        expect(r.ok).toBe(false);
+        expect(r.error).toBe('missing command');
+      }
+    }
+    // 全部非法输入均不应触发子进程
+    expect(spy).not.toHaveBeenCalled();
+  } finally {
+    spy.mockRestore();
+  }
+});
+
 test('run_shell captures non-zero exit and stderr', async () => {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'h-'));
   const reg = new ToolRegistry([...shellTools]);

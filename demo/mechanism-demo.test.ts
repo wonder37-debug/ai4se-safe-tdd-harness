@@ -13,7 +13,7 @@ import * as fs from 'fs/promises'; import * as os from 'os'; import * as path fr
 const sh = (c:string) => ({ tool:'run_shell' as const, args:{command:c} });
 const act = (t:string,a={}) => '```action\n'+JSON.stringify({tool:t,args:a})+'\n```';
 
-// ponytail: runner is a .js file invoked by `node run-tests.js` — no Unix `sh` dependency,
+// runner is a .js file invoked by `node run-tests.js` — no Unix `sh` dependency,
 // no cmd-vs-bash quoting. `node` is the only host requirement (guaranteed: this is a Node project).
 // Resolves cross-platform on Windows PowerShell, Git Bash, and Linux CI.
 const RUNNER_PASS_WHEN_CORRECT = `const a = require('./add.js');

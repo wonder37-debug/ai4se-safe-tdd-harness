@@ -111,7 +111,7 @@ export function makeLoopFactory(opts: LoopFactoryOpts) {
     if (resolved) {
       llm = new OpenAICompatProvider({ baseUrl: resolved.baseUrl, apiKey: resolved.key, model: resolved.model });
       if (resolved.source !== 'encrypted-file') {
-        // ponytail: SPEC §3.9 要求 .env fallback 带告警；明文 key 一律告警
+        // SPEC §3.9 要求 .env fallback 带告警；明文 key 一律告警
         console.warn(`[security] 使用明文 API_KEY（source=${resolved.source}）；生产请用 creds.enc + MASTER_PASSWORD`);
       }
     } else {
