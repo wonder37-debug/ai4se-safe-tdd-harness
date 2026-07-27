@@ -7,9 +7,15 @@ function wrap(cmd: string): { cmd: string; isShell: boolean } {
   return { cmd, isShell: true };
 }
 
+// 缺省/非字符串 command 直接拒绝，避免 String(undefined) 变 "undefined" 串后进入 exec
+function invalidCommand(args: Record<string, any>): boolean {
+  return typeof args.command !== 'string' || !args.command.trim();
+}
+
 export const run_shell: Tool = {
   name: 'run_shell',
   async execute(args, ctx) {
+    if (invalidCommand(args)) return { ok: false, error: 'missing command' };
     const { cmd } = wrap(String(args.command));
     try {
       const { stdout, stderr } = await pexec(cmd, { cwd: ctx.cwd, maxBuffer: 1e6, timeout: 30000 });
@@ -29,6 +35,7 @@ export const run_shell: Tool = {
 export const run_tests: Tool = {
   name: 'run_tests',
   async execute(args, ctx) {
+    if (invalidCommand(args)) return { ok: false, error: 'missing command' };
     const { cmd } = wrap(String(args.command));
     try {
       const { stdout, stderr } = await pexec(cmd, { cwd: ctx.cwd, maxBuffer: 1e6, timeout: 60000 });
