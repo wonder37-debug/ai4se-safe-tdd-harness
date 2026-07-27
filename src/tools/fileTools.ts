@@ -2,8 +2,16 @@ import { Tool, ToolContext } from './tool';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
+// 工作区路径围栏：解析后必须落在 ctx.cwd 内（含 cwd 自身），
+// 绝对路径 / ../ 穿越一律拒绝，防止 LLM 读写工作区外任意文件。
+// 三个工具统一复用；越界时抛错，由各工具 catch 转成 { ok:false, error }。
 async function abs(p: string, ctx: ToolContext): Promise<string> {
-  return path.resolve(ctx.cwd, p);
+  const root = path.resolve(ctx.cwd);
+  const full = path.resolve(root, String(p ?? ''));
+  if (full !== root && !full.startsWith(root + path.sep)) {
+    throw new Error('path escapes workspace');
+  }
+  return full;
 }
 
 export const read_file: Tool = {
