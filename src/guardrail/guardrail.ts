@@ -84,6 +84,60 @@ function isDeletionAttempt(raw: string): boolean {
   return /\b(rm|unlink|shred|del|erase|rmdir|rd|remove-item|ri)\b/.test(raw);
 }
 
+// 漏洞 3 修复：子壳/套壳命令绕过。
+// bash -c "rm -rf /" 经 shell-quote 解析后内部命令是单个字符串 token，
+// 整词匹配完全失明。解包 bash/sh/zsh/dash/powershell/pwsh/cmd/wsl 的包裹层，
+// 提取内部真实子命令递归审计；深度上限防无限套娃。
+// 仅当首 token 是 shell 解释器时才解包，避免 echo/git commit 等普通参数误报。
+const SUBSHELL_DEPTH_LIMIT = 5;
+const POSIX_SHELLS = ['bash', 'sh', 'zsh', 'dash'];
+const PS_SHELLS = ['powershell', 'pwsh'];
+
+// 提取套壳命令的内部子命令串；非套壳调用返回 null
+function extractInner(tokens: string[]): string | null {
+  const t0 = tokens[0];
+  if (POSIX_SHELLS.includes(t0)) {
+    const i = tokens.indexOf('-c');
+    return i >= 0 && tokens[i + 1] ? tokens[i + 1] : null;
+  }
+  if (PS_SHELLS.includes(t0)) {
+    // token 已小写：-Command → -command；PowerShell 允许多参数拼接成脚本体
+    const i = tokens.findIndex(t => t === '-c' || t === '-command');
+    return i >= 0 && tokens.length > i + 1 ? tokens.slice(i + 1).join(' ') : null;
+  }
+  if (t0 === 'cmd' || t0 === 'cmd.exe') {
+    const i = tokens.findIndex(t => t === '/c' || t === '/k');
+    return i >= 0 && tokens.length > i + 1 ? tokens.slice(i + 1).join(' ') : null;
+  }
+  return null;
+}
+
+// 递归审计 token 序列：先按现有规则匹配，未命中再解包子壳内部命令继续审计
+function assessTokens(tokens: string[], depth: number):
+  { hit: { id: string; severity: Severity; reason: string }; viaSubshell: boolean } | null {
+  const hit = match(tokens);
+  if (hit) return { hit, viaSubshell: false };
+  if (depth <= 0 || tokens.length === 0) return null;
+  // wsl 前缀剥离：wsl bash -c "..." 的实际命令从第二个 token 开始
+  if (tokens[0] === 'wsl' && tokens.length > 1) {
+    const r = assessTokens(tokens.slice(1), depth - 1);
+    return r ? { ...r, viaSubshell: true } : null;
+  }
+  const inner = extractInner(tokens);
+  if (inner === null) return null;
+  // 内部命令同样要过 Windows 删除护栏（如 bash -c "del /s ..."）
+  const win = matchWindows(inner);
+  if (win) return { hit: win, viaSubshell: true };
+  let innerTokens: string[];
+  try { innerTokens = toTokens(inner); }
+  catch {
+    // 内部命令无法解析：与外层 tokenize-failed 同样强制审批
+    return { hit: { id: 'tokenize-failed', severity: 'high' as Severity, reason: 'malformed inner command, forcing approval' }, viaSubshell: true };
+  }
+  const r = assessTokens(innerTokens, depth - 1);
+  return r ? { ...r, viaSubshell: true } : null;
+}
+
 export const Guardrail = {
   assess(action: Action, state?: SessionState): GuardrailVerdict {
     if (action.tool !== 'run_shell' && action.tool !== 'run_tests') return { severity: 'none', reasons: [] };
@@ -100,8 +154,15 @@ export const Guardrail = {
     let tokens: string[];
     try { tokens = toTokens(cmd); }
     catch { return { severity: 'high', reasons: ['tokenize-failed: malformed command, forcing approval'] }; }
-    const hit = match(tokens);
-    if (!hit) return { severity: 'none', reasons: [] };
-    return { severity: hit.severity, reasons: [`${hit.id}: ${hit.reason}`] };
+    // 递归审计：先匹配当前层，未命中再解包子壳（bash -c 等）内部命令
+    const res = assessTokens(tokens, SUBSHELL_DEPTH_LIMIT);
+    if (!res) return { severity: 'none', reasons: [] };
+    const reasons = [`${res.hit.id}: ${res.hit.reason}`];
+    // 命中发生在解包之后：前置 subshell-bypass 标记，审批面板可见套壳链路
+    if (res.viaSubshell) {
+      const p = pick('subshell-bypass');
+      reasons.unshift(`${p.id}: ${p.reason}`);
+    }
+    return { severity: res.hit.severity, reasons };
   },
 };

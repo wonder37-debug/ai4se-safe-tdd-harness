@@ -22,5 +22,7 @@
   { "id": "plain-rm", "severity": "low",
     "reason": "single-target rm (no -rf)" },
   { "id": "deny-escalation", "severity": "high",
-    "reason": "file deletion attempted right after a denied action (split-command bypass)" }
+    "reason": "file deletion attempted right after a denied action (split-command bypass)" },
+  { "id": "subshell-bypass", "severity": "high",
+    "reason": "shell wrapper unwrapped (bash/sh/powershell/cmd/wsl -c); inner command audited" }
 ]
