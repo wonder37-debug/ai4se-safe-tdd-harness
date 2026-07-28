@@ -44,7 +44,7 @@ npm run demo      # §A.6 机制演示三幕
 
 ```bash
 npm run build
-$env:MASTER_PASSWORD="<写入你的主密码>" # 注入主密码环境变量(Windows PowerShell写法)
+$env:MASTER_PASSWORD="写入你的主密码" # 注入主密码环境变量(Windows PowerShell写法)
 node dist/index.js --web          # 监听 $PORT，默认 8080
 ```
 
@@ -58,7 +58,7 @@ node dist/index.js --web          # 监听 $PORT，默认 8080
 
 三者齐备（主密码 + 端点 + 可解密 key）即可使用在线 `OpenAICompatProvider`，在面板录入 `API_KEY` + 主密码保存（加密落盘），再填请求地址 / 模型后提交任务即可完成真实大模型Agent开发（点击启动循环后会有较大延迟，请耐心等待）；任一缺失则降级离线 `ScriptedMock`，无 Key 也能在浏览器观看完整 TDD 自修正闭环演示。
 
-> ⚠️ **主密码必须两边一致**：面板保存 `API_KEY` 时输入的主密码，与启动进程前设的 `MASTER_PASSWORD` 环境变量必须完全相同（文档中 `<...>` 为占位符记号，实际输入时不要带尖括号）。两边不一致时解密会静默失败并降级离线演示——若提交任务后瞬间跑完固定的 add.js 剧本，大概率就是主密码不匹配或凭据未齐备，可用 `GET /api/key/status` 与 `GET /api/config` 自查落盘状态。
+> ⚠️ **主密码必须两边一致**：面板保存 `API_KEY` 时输入的主密码，与启动进程前设的 `MASTER_PASSWORD` 环境变量必须完全相同。两边不一致时解密会静默失败并降级离线演示——若提交任务后瞬间跑完固定的 add.js 剧本，大概率就是主密码不匹配或凭据未齐备，可用 `GET /api/key/status` 与 `GET /api/config` 自查落盘状态。
 
 ### 凭据接入三路径总览
 
@@ -73,7 +73,7 @@ node dist/index.js --web          # 监听 $PORT，默认 8080
 ```powershell
 $env:API_KEY="sk-你的真实key"
 $env:API_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"   # 或其它 OpenAI 兼容端点
-$env:MODEL="qwen-plus"
+$env:MODEL="选择的模型"
 node dist/index.js --web    # 或 -i / --task "..."
 ```
 
@@ -92,7 +92,7 @@ node dist/index.js -i
 
 # (b) 单次任务：执行一次后退出
 node dist/index.js --task "实现一个 add(a,b) 函数并用测试验证"
-node dist/index.js --task "..." --cwd "<工作区绝对路径>"   # 指定工作目录
+node dist/index.js --task "..." --cwd "工作区绝对路径"   # 指定工作目录
 node dist/index.js "实现 add"                            # 裸参数简写
 
 # (c) Web 面板（同 §2）
@@ -106,7 +106,7 @@ node dist/index.js -h
 
 ```bash
 # 离线冒烟（无 Key，终端即跑）
-node dist/index.js --task "implement add" --cwd "<临时目录绝对路径>"
+node dist/index.js --task "implement add" --cwd "临时目录绝对路径"
 # 期望输出：[done] haltReason=finish, iterations=5
 ```
 
@@ -145,7 +145,7 @@ npm test -- test/integration/real-llm.test.ts
 
 ```bash
 docker build -t ai4se-safe-tdd-harness .
-docker run -p 8080:8080 -e MASTER_PASSWORD=<你的主密码> -v "<物理工作区绝对路径>:/workspace" ai4se-safe-tdd-harness
+docker run -p 8080:8080 -e MASTER_PASSWORD=你的主密码 -v "物理工作区绝对路径:/workspace" ai4se-safe-tdd-harness
 ```
 
 启动容器后访问 http://localhost:8080。使用方式与本地开发一致（无key降级为机制演示；保存key后使用真实大模型）。在面板录入 `API_KEY` + 主密码保存（加密落盘），再填请求地址 / 模型后提交任务即可。（在 Web 面板输入的「工作区目录」必须固定填写为 /workspace，点击启动循环后会有较大延迟，请耐心等待）。
@@ -160,7 +160,7 @@ docker run -p 8080:8080 -e MASTER_PASSWORD=<你的主密码> -v "<物理工作�
 npm ci
 npm run build
 # 【Windows PowerShell】
-$env:MASTER_PASSWORD="<写入你的主密码>"
+$env:MASTER_PASSWORD="写入你的主密码"
 node dist/index.js --web          # Linux / Windows 通用
 ```
 
