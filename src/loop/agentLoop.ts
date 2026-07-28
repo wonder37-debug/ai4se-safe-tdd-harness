@@ -21,7 +21,17 @@ export interface LoopDeps {
   sink?: EventSink;
 }
 
-type HaltReason = 'finish' | 'cap' | 'stuck' | 'provider_error';
+type HaltReason = 'finish' | 'cap' | 'stuck' | 'provider_error' | 'user_abort';
+
+// 漏洞 4 修复：用户终止意图硬性约束。
+// 审批拒绝对话中出现显式终止意图（终止/停止/不要执行了/abort/cancel/stop）时，
+// 循环立即终止（user_abort），严禁 LLM 寻找替代工具重试。中英文关键词均覆盖；
+// 英文用词边界避免命中 stopped/cancelled 一类派生词造成误判。
+function hasAbortIntent(reason: string): boolean {
+  const s = reason.toLowerCase();
+  if (s.includes('终止') || s.includes('停止') || s.includes('不要执行了')) return true;
+  return /\b(abort|cancel|stop)\b/.test(s);
+}
 
 export class AgentLoop {
   private messages: Message[];
@@ -76,6 +86,11 @@ export class AgentLoop {
         const dec = await this.deps.approval.request(action, verdict.reasons);
         this.sink.emit({ type: 'approval_decision', payload: dec, iter });
         if (dec.decision === 'deny') {
+          // 漏洞 4：用户在拒绝对话中表达显式终止意图 → 立即终止，严禁重试或寻找替代工具
+          if (hasAbortIntent(dec.reason)) {
+            this.sink.emit({ type: 'halt', payload: { reason: 'user_abort', userReason: dec.reason }, iter });
+            return { haltReason: 'user_abort', iterations: iter };
+          }
           this.session.lastDenied = true; // 记录拒绝：下一轮删除尝试将被强制拦截
           this.messages.push({ role: 'user', content: `Observation: DENIED: ${dec.reason} (reasons: ${verdict.reasons.join('; ')})` });
           continue;
