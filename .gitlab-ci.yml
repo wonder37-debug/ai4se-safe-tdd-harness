@@ -1,5 +1,13 @@
 image: node:20-bookworm-slim
 
+# 共享 runner 偶发系统故障（作业 0 秒无日志失败）时自动重试，最多 2 次
+default:
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
 stages:
   - test
   - build
