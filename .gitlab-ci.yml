@@ -1,4 +1,5 @@
-image: node:20-bookworm-slim
+# 通过南大镜像站 docker.nju.edu.cn 代理拉取 Docker Hub 官方镜像，避免校园网直连 Docker Hub 限流/阻断
+image: docker.nju.edu.cn/library/node:20-bookworm-slim
 
 # 共享 runner 偶发系统故障（作业 0 秒无日志失败）时自动重试，最多 2 次
 default:
