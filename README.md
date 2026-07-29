@@ -4,18 +4,16 @@
 
 ## 项目简介
 
-- ## 项目简介
+本项目是 AI4SE 暑期课程项目 A 选项（Coding Agent Harness）。交付的是一个**自研 harness 内核**：把 LLM 包装成一个可靠的编码 agent，而非在现有 agent 框架之上做配置层。核心机制——工具分发、治理拦截、反馈回灌、记忆读写、halt 决策——全部是手写的确定性函数，可用 mock/stub LLM 在**无网络**下独立验证。
 
-  本项目是 AI4SE 暑期课程项目 A 选项（Coding Agent Harness）。交付的是一个**自研 harness 内核**：把 LLM 包装成一个可靠的编码 agent，而非在现有 agent 框架之上做配置层。核心机制——工具分发、治理拦截、反馈回灌、记忆读写、halt 决策——全部是手写的确定性函数，可用 mock/stub LLM 在**无网络**下独立验证。
-
-  - **自研主循环** `AgentLoop`：`RUNNING → APPROVAL_PENDING → EXECUTING → HALTED` 手写状态机，编排 LLM / 工具 / 护栏 / 审批 / 反馈。
-  - **治理维度 1 — Guardrail（shell 命令治理）**：`shell-quote` token 层**整词匹配**危险模式库，揭穿 `r""m`、引号 / 转义混淆，以及 `bash -c "rm -rf /"` 一类套壳包装（`subshell-bypass`）。覆盖 Linux 与 Windows 双栈：`rm -rf` / `--no-preserve-root`（递归删）、`sudo` / `chmod 777`（提权）、`curl | sh` / `wget | bash`（远程脚本执行）、`DROP TABLE` / `TRUNCATE`（删库）、`> /etc/cron` / `fork-bomb` / 带 `Authorization` 头的出站请求（凭据外泄）；Windows 侧在 tokenize 前按原始串词边界匹配 `del /s|/f`、`rmdir /s`、`Remove-Item -Recurse`。三级处置：`high` 触发人工审批（HITL）并悬停 `y / n / 文本反馈`，`low`（如单文件 `rm`）仅告警，`none` 直行。**状态感知升级**：上一轮动作被拒绝（`lastDenied`）后，任何删除尝试都会被 `deny-escalation` 强制升 `high`，堵住「拒绝后分拆命令绕过」。
-  - **反馈维度 2 — FeedbackClassifier（TDD 反馈闭环）**：仅对 `run_tests` 工具的失败输出生效——由 `JestParser` 解析 Jest 的 stderr，分类为 `assertion`（带 `file:line` 与 `hint: adjust implementation so <file>:<line> assertion passes`）、`syntax`（`SyntaxError` / `Unexpected token`，带定位行）或 `other`（测试超时 60s / 无法识别，降级回灌）。结构化 `Feedback` 回灌进下一轮上下文，驱动 agent 自我修正；**若同一断言点连续 2 轮失败**，主循环判定 `HALTED(stuck)` 熔断，避免无限重试。
-  - **凭据治理** `EncryptedFileStore`：AES-256-GCM 加密落盘，`status()` 不回显明文；`JsonConfigStore` 以明文 JSON 存放非密的端点配置。
-  - **面板解耦配置**：Web 面板可分别录入 `API_KEY`、请求地址（`API_BASE_URL`）、请求模型（`MODEL`），三者独立保存，无需改环境变量即可切换供应商。
-  - **最小 Web 面板**：Node `http` 轮询（非 WS），浏览器内提交任务 + 实时事件流 + HITL 审批；无有效 Key 时自动降级离线 `ScriptedMock` 自修正演示。
-  - **CLI 三模式**：`--web`（面板）/ `--task "<描述>"`（单次）/ `-i`（交互 REPL，默认）；终端内高危动作触发 `y/n/文本反馈` 悬停审批，反馈文本回灌重定向对话；凭据经 `creds.enc` → `.env` 兜底 → 离线 `ScriptedMock` 三级降级。
-  - **Docker 分发**：`docker run -p 8080:8080` 一条命令起面板。
+- **自研主循环** `AgentLoop`：`RUNNING → APPROVAL_PENDING → EXECUTING → HALTED` 手写状态机，编排 LLM / 工具 / 护栏 / 审批 / 反馈。
+- **治理维度 1 — Guardrail（shell 命令治理）**：`shell-quote` token 层**整词匹配**危险模式库，揭穿 `r""m`、引号 / 转义混淆，以及 `bash -c "rm -rf /"` 一类套壳包装（`subshell-bypass`）。覆盖 Linux 与 Windows 双栈：`rm -rf` / `--no-preserve-root`（递归删）、`sudo` / `chmod 777`（提权）、`curl | sh` / `wget | bash`（远程脚本执行）、`DROP TABLE` / `TRUNCATE`（删库）、`> /etc/cron` / `fork-bomb` / 带 `Authorization` 头的出站请求（凭据外泄）；Windows 侧在 tokenize 前按原始串词边界匹配 `del /s|/f`、`rmdir /s`、`Remove-Item -Recurse`。三级处置：`high` 触发人工审批（HITL）并悬停 `y / n / 文本反馈`，`low`（如单文件 `rm`）仅告警，`none` 直行。**状态感知升级**：上一轮动作被拒绝（`lastDenied`）后，任何删除尝试都会被 `deny-escalation` 强制升 `high`，堵住「拒绝后分拆命令绕过」。
+- **反馈维度 2 — FeedbackClassifier（TDD 反馈闭环）**：仅对 `run_tests` 工具的失败输出生效——由 `JestParser` 解析 Jest 的 stderr，分类为 `assertion`（带 `file:line` 与 `hint: adjust implementation so <file>:<line> assertion passes`）、`syntax`（`SyntaxError` / `Unexpected token`，带定位行）或 `other`（测试超时 60s / 无法识别，降级回灌）。结构化 `Feedback` 回灌进下一轮上下文，驱动 agent 自我修正；**若同一断言点连续 2 轮失败**，主循环判定 `HALTED(stuck)` 熔断，避免无限重试。
+- **凭据治理** `EncryptedFileStore`：AES-256-GCM 加密落盘，`status()` 不回显明文；`JsonConfigStore` 以明文 JSON 存放非密的端点配置。
+- **面板解耦配置**：Web 面板可分别录入 `API_KEY`、请求地址（`API_BASE_URL`）、请求模型（`MODEL`），三者独立保存，无需改环境变量即可切换供应商。
+- **最小 Web 面板**：Node `http` 轮询（非 WS），浏览器内提交任务 + 实时事件流 + HITL 审批；无有效 Key 时自动降级离线 `ScriptedMock` 自修正演示。
+- **CLI 三模式**：`--web`（面板）/ `--task "<描述>"`（单次）/ `-i`（交互 REPL，默认）；终端内高危动作触发 `y/n/文本反馈` 悬停审批，反馈文本回灌重定向对话；凭据经 `creds.enc` → `.env` 兜底 → 离线 `ScriptedMock` 三级降级。
+- **Docker 分发**：`docker run -p 8080:8080` 一条命令起面板。
 
 ## 安装
 
