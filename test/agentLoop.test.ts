@@ -215,3 +215,71 @@ test('同一回复含多个 action 块：仅执行首个，messages 补 warn obs
   const msgs: { role: string; content: string }[] = (loop as any).messages;
   expect(msgs.some(m => m.role === 'user' && /仅执行首个 action.*忽略其余 1 个/.test(m.content))).toBe(true);
 });
+
+// ───────── 漏洞 4：用户终止意图硬性约束 ────────
+// 用户在审批拒绝对话中输入"终止/停止/不要执行了/abort/cancel/stop"等显式终止意图时，
+// 循环必须立即终止（user_abort），严禁 LLM 寻找替代工具重试。
+
+function abortLoop(reason: string) {
+  return async () => {
+    const cwd = await tmp();
+    const reg = new ToolRegistry([...fileTools, ...shellTools]);
+    const llm = new ScriptedMock([
+      action('run_shell', { command: 'rm -rf /' }),  // 高危 → 用户拒绝
+      action('finish', {}),                          // 不应到达
+    ]);
+    const loop = new AgentLoop({
+      llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([{ decision: 'deny', reason }]),
+      feedback: new FeedbackClassifier(new JestParser()),
+      memory: new MemoryStore(path.join(cwd, 'memory')),
+      cwd, maxIter: 20, systemPrompt: 'x',
+    });
+    const res = await loop.run();
+    expect(res.haltReason).toBe('user_abort');
+    expect(res.iterations).toBe(1);
+  };
+}
+
+test('abort intent "终止任务" halts loop immediately', abortLoop('终止任务'));
+test('abort intent "停止" halts loop immediately', abortLoop('停止'));
+test('abort intent "不要执行了" halts loop immediately', abortLoop('不要执行了'));
+test('abort intent "abort" halts loop immediately', abortLoop('please abort'));
+test('abort intent "cancel" halts loop immediately', abortLoop('cancel'));
+test('abort intent "stop" halts loop immediately', abortLoop('stop'));
+
+test('non-abort deny reason continues loop to finish (no false halt)', async () => {
+  const cwd = await tmp();
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  const llm = new ScriptedMock([
+    action('run_shell', { command: 'rm -rf /' }),  // 高危 → 拒绝"blocked"（无终止意图）
+    action('finish', {}),                          // 继续到 finish
+  ]);
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([{ decision: 'deny', reason: 'blocked' }]),
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x',
+  });
+  const res = await loop.run();
+  expect(res.haltReason).toBe('finish');
+});
+
+test('user abort emits halt event with reason user_abort', async () => {
+  const cwd = await tmp();
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  const llm = new ScriptedMock([
+    action('run_shell', { command: 'rm -rf /' }),
+    action('finish', {}),
+  ]);
+  const store = new EventStore();
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([{ decision: 'deny', reason: '终止' }]),
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x', sink: store,
+  });
+  await loop.run();
+  const halt = store.all().find(e => e.type === 'halt');
+  expect(halt).toBeDefined();
+  expect((halt!.payload as any).reason).toBe('user_abort');
+});
