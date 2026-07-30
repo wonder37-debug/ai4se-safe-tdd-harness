@@ -19,6 +19,8 @@
 
 ```bash
 git clone https://git.nju.edu.cn/241880540/ai4se-safe-tdd-harness.git
+# 或从 GitHub 克隆：
+git clone https://github.com/wonder37-debug/ai4se-safe-tdd-harness.git
 cd ai4se-safe-tdd-harness
 npm ci
 ```
@@ -188,6 +190,7 @@ ai4se-safe-tdd-harness/
 ├── demo/                  # §A.6 机制演示：mechanism-demo.test.ts + fixtures/
 ├── Dockerfile             # 多阶段构建（build → 生产镜像），CMD 带 --web
 ├── .gitlab-ci.yml         # unit-test（build 门禁 + coverage）与 docker-build（编译产物校验）
+├── .github/workflows/ci.yml  # GitHub Actions：等价于 .gitlab-ci.yml 的 unit-test / build-check
 ├── .env.example           # 字段模板（值为空，不含真实凭据）
 ├── package.json           # scripts: test / demo / build / start
 ├── tsconfig.json
@@ -280,6 +283,8 @@ AgentLoop (自研主循环)
 ## CI
 
 `.gitlab-ci.yml` 定义两个 job：`unit-test`（`npm ci && npm run build && npx jest --coverage`，tsc 类型门禁 + 覆盖率报告）与 `docker-build`（编译产物存在性校验）。机制演示见 `demo/mechanism-demo.test.ts`（`npm run demo`）。
+
+本项目同时支持 GitHub Actions（`.github/workflows/ci.yml`），含 `unit-test`（编译门禁 + `jest --coverage`，产物 `coverage/` 上传并保留 7 天）与 `build-check`（依赖 `unit-test`，校验 `dist/index.js` 编译产物存在）两个 job，行为与上述 GitLab 流水线等价。
 
 ## 许可
 
