@@ -13,7 +13,8 @@ let lastEventAt = Date.now();
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
-function truncate(s, n) { s = String(s); return s.length > n ? s.slice(0, n) + '…' : s; }
+// 注：已废除硬截断 truncate()——长命令/路径/错误日志一律完整输出，
+// 折行交给 CSS（.e-body/.event code 的 overflow-wrap）与终端自然换行处理。
 
 // ───────── 启动后驻留的等待/思考提示 ─────────
 // 点击启动循环后显示"等待大模型响应中…"，首事件到达或循环结束时收起；
@@ -92,8 +93,8 @@ function describeAction(p) {
     case 'write_file': return `📄 写入文件 <code>${esc(a.path || '')}</code>`;
     case 'read_file':  return `📖 读取文件 <code>${esc(a.path || '')}</code>`;
     case 'list_dir':   return `📂 列出目录 <code>${esc(a.path || '.')}</code>`;
-    case 'run_shell':  return `⚙️ 执行命令 <code>${esc(truncate(a.command || '', 80))}</code>`;
-    case 'run_tests':  return `🧪 运行测试 <code>${esc(truncate(a.command || '', 80))}</code>`;
+    case 'run_shell':  return `⚙️ 执行命令 <code>${esc(a.command || '')}</code>`;
+    case 'run_tests':  return `🧪 运行测试 <code>${esc(a.command || '')}</code>`;
     case 'finish':     return `🏁 结束循环`;
     default:           return `🔧 ${esc(p.tool)}`;
   }
@@ -125,7 +126,7 @@ function renderEvent(ev) {
   }
   if (ev.type === 'approval_request') {
     const a = ev.payload?.action || {};
-    const cmd = a.args?.command ? ` <code>${esc(truncate(a.args.command, 60))}</code>` : '';
+    const cmd = a.args?.command ? ` <code>${esc(a.args.command)}</code>` : '';
     return `<li class="event event--approval_request">${id}<span class="e-body">🔐 等待审批 · ${esc(a.tool || '?')}${cmd}</span></li>`;
   }
   if (ev.type === 'approval_decision') {
@@ -159,9 +160,9 @@ function renderObservation(ev, id) {
   if (p && typeof p === 'object' && 'errorType' in p) {
     return feedbackCard(id, p);
   }
-  // 失败：提取 error/stderr 首段
+  // 失败：完整 error/stderr 输出（多行堆栈原样保留，折行交给 CSS）
   if (p && p.ok === false) {
-    return `<li class="event event--observation">${id}<span class="e-body">❌ ${esc(truncate(p.error || p.stderr || '失败', 120))}</span></li>`;
+    return `<li class="event event--observation">${id}<span class="e-body">❌ ${esc(p.error || p.stderr || '失败')}</span></li>`;
   }
   // 成功：按上一动作工具给极简提示（测试通过 / 已写入 …），不倾倒 stdout/content
   return `<li class="event event--feedback-ok">${id}<span class="e-body">✅ ${obsSuccess()}</span></li>`;
@@ -178,7 +179,7 @@ function feedbackCard(id, fb) {
   if (loc) html += `<div class="fb-loc">位于 <code class="line">${esc(loc)}</code></div>`;
   if (fb.hint) html += `<div class="fb-hint">${esc(fb.hint)}</div>`;
   if (fb.evidence) {
-    html += `<details><summary>错误证据</summary><pre>${esc(truncate(fb.evidence, 800))}</pre></details>`;
+    html += `<details><summary>错误证据</summary><pre>${esc(fb.evidence)}</pre></details>`;
   }
   html += `</div></li>`;
   return html;

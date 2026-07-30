@@ -390,8 +390,8 @@ textarea:focus, input:focus {
   animation: rise .24s ease;
 }
 .event .e-id { color: var(--muted-2); font-family: var(--mono); font-size: 0.72rem; margin-right: 8px; }
-.event .e-body { word-break: break-word; }
-.event code { font-family: var(--mono); font-size: 0.82em; }
+.event .e-body { word-break: break-word; overflow-wrap: anywhere; }
+.event code { font-family: var(--mono); font-size: 0.82em; overflow-wrap: anywhere; word-break: break-all; }
 
 /* 动作气泡：左对齐，淡底 */
 .event--action { background: var(--paper); }

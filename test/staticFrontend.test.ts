@@ -78,6 +78,9 @@ test('事件流增强：app.js 含 thought 气泡渲染 + 等待提示 + Emoji �
     expect(body).toContain('❌');
     // 废除裸露 JSON：默认分支不再 JSON.stringify(payload) 打印
     expect(body).not.toContain('JSON.stringify(ev.payload)');
+    // 废除硬截断：app.js 不再含 truncate() 调用与 slice(0,n)+'…' 截断惯用法
+    expect(body).not.toContain('function truncate');
+    expect(body).not.toContain("+'…'");
   } finally { srv.server.close(); }
 });
 

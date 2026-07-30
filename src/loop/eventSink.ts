@@ -54,7 +54,7 @@ export class ConsoleSink implements EventSink {
 
   private formatAction(a: Action): string {
     const p = String(a.args?.path ?? '');
-    const cmd = this.clip(a.args?.command);
+    const cmd = String(a.args?.command ?? '');
     switch (a.tool) {
       case 'write_file': return `📄 写入文件: ${p}`;
       case 'read_file':  return `📖 读取文件: ${p}`;
@@ -75,13 +75,14 @@ export class ConsoleSink implements EventSink {
       }
       if (fb.errorType === 'assertion' && fb.assertion) {
         const line = `  └─ ❌ 断言失败 ${fb.assertion.file}:${fb.assertion.line}`;
-        return fb.hint ? `${line}\n     💡 ${this.clip(fb.hint, 80)}` : line;
+        // hint 完整输出（不截断）；终端对超长行自然折行
+        return fb.hint ? `${line}\n     💡 ${fb.hint}` : line;
       }
       return `  └─ ❌ 测试失败`;
     }
-    // 普通工具失败：提取 error 首行
+    // 普通工具失败：完整 error 输出（多行堆栈原样保留，不取首行、不截断）
     if (payload && payload.ok === false) {
-      return `  └─ ❌ ${this.clip(payload.error || '失败')}`;
+      return `  └─ ❌ ${String(payload.error || '失败')}`;
     }
     // 成功：按上一工具给极简提示
     return `  └─ ✅ ${this.successMsg()}`;
@@ -104,15 +105,9 @@ export class ConsoleSink implements EventSink {
       case 'finish':         return `🏁 任务完成`;
       case 'cap':            return `⛔ 达到迭代上限`;
       case 'stuck':          return `⛔ 卡死停机（连续两轮同一断言点失败）`;
-      case 'provider_error': return `⛔ LLM 调用失败${payload?.error ? '：' + this.clip(payload.error, 80) : ''}`;
+      // provider error 完整输出，便于排查调用失败原因
+      case 'provider_error': return `⛔ LLM 调用失败${payload?.error ? '：' + String(payload.error) : ''}`;
       default:               return `⛔ 停止：${reason}`;
     }
-  }
-
-  // 取首行并截断，避免长命令/长 evidence 溢出终端
-  private clip(s: any, n = 60): string {
-    const str = String(s ?? '');
-    const one = str.split(/\r?\n/)[0];
-    return one.length > n ? one.slice(0, n) + '…' : one;
   }
 }

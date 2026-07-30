@@ -78,7 +78,7 @@ test('observation: 语法失败 → ❌ 语法错误 file:line', () => {
   expect(lines[1]).toContain('a.js:5');
 });
 
-test('observation: 普通工具失败 → ❌ error 首行', () => {
+test('observation: 普通工具失败 → ❌ 完整 error 输出', () => {
   const lines: string[] = [];
   const sink = new ConsoleSink((l) => lines.push(l));
   sink.emit({ type: 'action', payload: { tool: 'read_file', args: { path: 'x' } }, iter: 1 });
@@ -110,13 +110,27 @@ test('approval: deny → 🚫 拒绝 — reason', () => {
   expect(lines[0]).toContain('too dangerous');
 });
 
-test('长命令被截断（不溢出终端，带 …）', () => {
+test('长命令完整输出（不截断、不带 …，由终端自然折行）', () => {
   const lines: string[] = [];
   const sink = new ConsoleSink((l) => lines.push(l));
   const longCmd = 'node -e "' + 'x'.repeat(200) + '"';
   sink.emit({ type: 'action', payload: { tool: 'run_shell', args: { command: longCmd } }, iter: 1 });
-  expect(lines[0].length).toBeLessThan(80);
-  expect(lines[0]).toContain('…');
+  expect(lines[0]).toContain('⚙️');
+  expect(lines[0]).toContain('执行命令');
+  expect(lines[0]).toContain(longCmd); // 完整命令在，未被腰斩
+  expect(lines[0]).not.toContain('…'); // 不再硬截断
+});
+
+test('长错误日志完整输出（多行堆栈不腰斩、不取首行）', () => {
+  const lines: string[] = [];
+  const sink = new ConsoleSink((l) => lines.push(l));
+  sink.emit({ type: 'action', payload: { tool: 'read_file', args: { path: 'x' } }, iter: 1 });
+  const err = 'Error: something broke\n    at a.js:1\n    at b.js:2';
+  sink.emit({ type: 'observation', payload: { ok: false, error: err }, iter: 1 });
+  expect(lines[1]).toContain('❌');
+  expect(lines[1]).toContain('something broke');
+  expect(lines[1]).toContain('at b.js:2'); // 末行也在——不再只取首行
+  expect(lines[1]).not.toContain('…');
 });
 
 test('thought: 自然语言思考 → 🤖 前缀，保留多段，不泄漏围栏/JSON', () => {
