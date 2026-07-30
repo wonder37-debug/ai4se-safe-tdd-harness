@@ -150,7 +150,9 @@ docker build -t ai4se-safe-tdd-harness .
 docker run -p 8080:8080 -e MASTER_PASSWORD=你的主密码 -v "物理工作区绝对路径:/workspace" ai4se-safe-tdd-harness
 ```
 
-启动容器后访问 http://localhost:8080。使用方式与本地开发一致（无key降级为机制演示；保存key后使用真实大模型）。在面板录入 `API_KEY` + 主密码保存（加密落盘），再填请求地址 / 模型后提交任务即可。（在 Web 面板输入的「工作区目录」必须固定填写为 /workspace，点击启动循环后会有较大延迟，请耐心等待）。
+启动容器后访问  http://localhost:8080 。
+
+使用方式与本地开发一致（无key降级为机制演示；保存key后使用真实大模型）。在面板录入 `API_KEY` + 主密码保存（加密落盘），再填请求地址 / 模型后提交任务即可。（在 Web 面板输入的「工作区目录」必须固定填写为 /workspace，点击启动循环后会有较大延迟，请耐心等待）。
 
 > Docker 镜像基于 `node:20-bookworm-slim`（Linux）。Linux 直接 `docker build`；Windows / macOS 通过 Docker Desktop 构建（跨平台一致）。
 
