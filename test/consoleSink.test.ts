@@ -119,6 +119,17 @@ test('长命令被截断（不溢出终端，带 …）', () => {
   expect(lines[0]).toContain('…');
 });
 
+test('thought: 自然语言思考 → 🤖 前缀，保留多段，不泄漏围栏/JSON', () => {
+  const lines: string[] = [];
+  const sink = new ConsoleSink((l) => lines.push(l));
+  sink.emit({ type: 'thought', payload: { text: '先写实现，故意留 bug。\n再跑测试验证自修正。' }, iter: 1 });
+  expect(lines[0]).toContain('🤖');
+  expect(lines[0]).toContain('故意留 bug');
+  expect(lines[0]).toContain('再跑测试');
+  expect(lines[0]).not.toContain('{');
+  expect(lines[0]).not.toContain('```action');
+});
+
 test('未知事件类型不崩（静默跳过）', () => {
   const lines: string[] = [];
   const sink = new ConsoleSink((l) => lines.push(l));

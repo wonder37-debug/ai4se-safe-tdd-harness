@@ -58,6 +58,38 @@ test('redesign: approval reason input + Deny & 反馈 served via /app.js', async
   } finally { srv.server.close(); }
 });
 
+test('事件流增强：app.js 含 thought 气泡渲染 + 等待提示 + Emoji 动作翻译，废除裸 JSON', async () => {
+  const { srv, port } = await boot();
+  try {
+    const { status, body } = await get(port, '/app.js');
+    expect(status).toBe(200);
+    // thought 事件分支与思考气泡样式类
+    expect(body).toContain('thought');
+    expect(body).toContain('event--thought');
+    // 启动循环后的"等待大模型响应"驻留提示
+    expect(body).toContain('等待大模型响应');
+    // Action 翻译为带 Emoji 的自然语言短句（对齐 CLI）
+    expect(body).toContain('📄');
+    expect(body).toContain('写入文件');
+    expect(body).toContain('🧪');
+    expect(body).toContain('运行测试');
+    // Observation 成功/失败带 Emoji
+    expect(body).toContain('✅');
+    expect(body).toContain('❌');
+    // 废除裸露 JSON：默认分支不再 JSON.stringify(payload) 打印
+    expect(body).not.toContain('JSON.stringify(ev.payload)');
+  } finally { srv.server.close(); }
+});
+
+test('事件流增强：index.html 含等待提示横幅容器', async () => {
+  const { srv, port } = await boot();
+  try {
+    const { status, body } = await get(port, '/');
+    expect(status).toBe(200);
+    expect(body).toContain('id="waitBanner"');
+  } finally { srv.server.close(); }
+});
+
 test('端点配置：index.html 含 API_KEY 标签与 baseurl/model 输入框', async () => {
   const { srv, port } = await boot();
   try {

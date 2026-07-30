@@ -19,11 +19,9 @@ export function rlAsk(rl: readline.Interface): AskFn {
 }
 
 // 过滤 LLM 响应中裸露的 ```action {...} ``` 围栏代码块，只保留自然语言解释。
-// 纯函数，离线可单测；被 makeLoopFactory 的 console 包装器复用。
-// 同样兼容未闭合围栏（大模型偶发漏写结尾三反引号），否则终端会把半截 JSON 当自然语言打印。
-export function stripActionFences(text: string): string {
-  return text.replace(/```action\s*[\s\S]*?(?:```|$)/g, '').trim();
-}
+// 定义已上移至 protocol/actionProtocol（供 AgentLoop 复用，避免 loop→cli 反向依赖）；
+// 此处保留 re-export 以兼容现有 import 站点（index.ts / repl.test.ts）。
+export { stripActionFences } from '../protocol/actionProtocol';
 
 export async function runRepl(opts: ReplOpts): Promise<void> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

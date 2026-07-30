@@ -9,13 +9,19 @@ const CHECKER = `node -e "const a=require('./add.js');if(a(2,3)!==5){console.err
 const act = (tool: string, args: Record<string, unknown>) =>
   '```action\n' + JSON.stringify({ tool, args }) + '\n```';
 
+// 自然语言思考 + action 围栏：演示大模型"先想后做"的真实回复形态。
+// AgentLoop 会用 stripActionFences 剥除围栏，把 think 作为 thought 事件存入 EventStore，
+// web 面板据此渲染思考气泡；围栏内 JSON 仍被 ActionProtocol.parse 解析为动作。
+const thinkAct = (think: string, tool: string, args: Record<string, unknown>) =>
+  `${think}\n${act(tool, args)}`;
+
 /** 供 ScriptedMock 逐轮吐出的动作序列：buggy → 测试失败 → 修正 → 测试通过 → finish。 */
 export function offlineDemoActions(): string[] {
   return [
-    act('write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a-b;\n' }),
-    act('run_tests', { command: CHECKER }),
-    act('write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a+b;\n' }),
-    act('run_tests', { command: CHECKER }),
-    act('finish', {}),
+    thinkAct('我先写一个 add 实现，但故意把加号写成减号，用来演示自修正闭环。', 'write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a-b;\n' }),
+    thinkAct('跑测试，预期失败——这正是反馈闭环的入口，失败信息会回灌给我。', 'run_tests', { command: CHECKER }),
+    thinkAct('根据断言失败反馈，把减号改成加号，修正实现。', 'write_file', { path: 'add.js', content: 'module.exports=(a,b)=>a+b;\n' }),
+    thinkAct('再次跑测试，预期转绿。', 'run_tests', { command: CHECKER }),
+    thinkAct('实现已通过测试，结束循环。', 'finish', {}),
   ];
 }

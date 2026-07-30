@@ -216,6 +216,50 @@ test('同一回复含多个 action 块：仅执行首个，messages 补 warn obs
   expect(msgs.some(m => m.role === 'user' && /仅执行首个 action.*忽略其余 1 个/.test(m.content))).toBe(true);
 });
 
+// ───────── Thought 事件：剥除 action 围栏后的自然语言思考存入 EventStore ────────
+// 大模型回复 = 自然语言解释 + ```action 围栏。AgentLoop 须把围栏剥除后的干净文本
+// 作为 thought 事件发出（供 web 前端轮询渲染思考气泡），且先于 action 事件。
+
+test('LLM 回复含自然语言 + action 围栏 → 发出 thought 事件（剥除围栏的干净文本），先于 action', async () => {
+  const cwd = await tmp();
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  const resp = '我先写一个 add 实现，但故意留个 bug 用来演示自修正。\n```action\n' +
+    JSON.stringify({ tool: 'write_file', args: { path: 'add.js', content: 'module.exports=(a,b)=>a-b;\n' } }) + '\n```';
+  const llm = new ScriptedMock([resp, action('finish', {})]);
+  const store = new EventStore();
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([]),
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x', sink: store,
+  });
+  await loop.run();
+  const evs = store.all();
+  const thoughtIdx = evs.findIndex(e => e.type === 'thought');
+  const actionIdx = evs.findIndex(e => e.type === 'action');
+  expect(thoughtIdx).toBeGreaterThanOrEqual(0);
+  expect(actionIdx).toBeGreaterThan(thoughtIdx);              // thought 先于 action
+  const thought = evs[thoughtIdx].payload as { text: string };
+  expect(thought.text).toContain('故意留个 bug');
+  expect(thought.text).not.toContain('```action');            // 围栏已剥除
+  expect(thought.text).not.toContain('"tool"');                // 不泄漏 action JSON
+});
+
+test('LLM 回复纯 action 围栏（无自然语言）→ 不发空 thought 事件', async () => {
+  const cwd = await tmp();
+  const reg = new ToolRegistry([...fileTools, ...shellTools]);
+  const llm = new ScriptedMock([action('finish', {})]);
+  const store = new EventStore();
+  const loop = new AgentLoop({
+    llm, registry: reg, guardrail: Guardrail, approval: new MockApprovalGateway([]),
+    feedback: new FeedbackClassifier(new JestParser()),
+    memory: new MemoryStore(path.join(cwd, 'memory')),
+    cwd, maxIter: 20, systemPrompt: 'x', sink: store,
+  });
+  await loop.run();
+  expect(store.all().filter(e => e.type === 'thought')).toHaveLength(0);
+});
+
 // ───────── 漏洞 4：用户终止意图硬性约束 ────────
 // 用户在审批拒绝对话中输入"终止/停止/不要执行了/abort/cancel/stop"等显式终止意图时，
 // 循环必须立即终止（user_abort），严禁 LLM 寻找替代工具重试。
