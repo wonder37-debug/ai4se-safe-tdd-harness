@@ -22,6 +22,13 @@ export class ConsoleSink implements EventSink {
 
   emit(e: Omit<Event, 'id'>): void {
     switch (e.type) {
+      case 'thought': {
+        // 大模型自然语言思考：🤖 前缀 + 完整多段文本（不截断，思考值得完整呈现）
+        const text = (e.payload && typeof e.payload === 'object' && 'text' in e.payload)
+          ? String((e.payload as any).text) : String(e.payload ?? '');
+        if (text) this.write(`🤖 ${text}`);
+        break;
+      }
       case 'action': {
         const a = e.payload as Action;
         this.lastTool = a.tool;

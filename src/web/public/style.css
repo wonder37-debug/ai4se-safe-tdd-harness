@@ -429,8 +429,73 @@ textarea:focus, input:focus {
   font-weight: 500;
 }
 
+/* 大模型思考气泡：签名元素——"笔记本边注"。
+   serif 斜体 + 暖灰墨 + 左侧发丝细线 + 柔色底，多段自然语言以 pre-wrap 原样保留。
+   视觉上区别于 action（暖纸底）/ observation（透明）：更安静、更像旁注。 */
+.event--thought {
+  background: var(--paper-2);
+  border-left: 2px solid var(--hair);
+  color: var(--ink-2);
+  padding: 10px 14px 10px 12px;
+}
+.event--thought .thought-body {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+.event--thought .thought-mark {
+  flex-shrink: 0;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  opacity: 0.72;
+}
+.event--thought .thought-text {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 16em;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* 兜底事件（废除裸 JSON 后的极简系统行） */
+.event--system { color: var(--muted-2); }
+
+/* 启动后驻留的等待/思考提示横幅：陶土柔底 + 脉动圆点 */
+.wait-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px;
+  border-radius: var(--r-sm);
+  background: var(--clay-bg);
+  color: var(--clay);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.84rem;
+  animation: rise .24s ease;
+}
+.wait-banner[hidden] { display: none; }
+.wait-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--clay);
+  flex-shrink: 0;
+  animation: wait-pulse 1.2s ease-in-out infinite;
+}
+@keyframes wait-pulse {
+  0%, 100% { opacity: .35; transform: scale(.82); }
+  50% { opacity: 1; transform: scale(1.12); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .event, .approval-card { animation: none; }
+  .wait-dot { animation: none; }
   * { transition: none !important; }
 }
 

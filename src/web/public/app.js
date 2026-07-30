@@ -1,15 +1,33 @@
 // AI4SE-Safe-TDD-Harness control panel — vanilla JS, HTTP polling
-// Anthropic 极简风格：自然语言事件气泡 + 卡其反馈 Blockquote + 审批原因回灌
+// Anthropic 极简风格：思考气泡 + 自然语言事件行 + 卡其反馈 Blockquote + 审批原因回灌
 const $ = (id) => document.getElementById(id);
 let since = 0;
 let lastIter = 0;
 let allSeen = [];
+// 承接上一 action 的工具类型，供 observation 成功提示选词（对齐 CLI ConsoleSink）
+let lastTool = null;
+// 启动后驻留的等待/思考提示状态
+let lastEventAt = Date.now();
 
 // ───────── 工具 ─────────
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 function truncate(s, n) { s = String(s); return s.length > n ? s.slice(0, n) + '…' : s; }
+
+// ───────── 启动后驻留的等待/思考提示 ─────────
+// 点击启动循环后显示"等待大模型响应中…"，首事件到达或循环结束时收起；
+// 运行中长时间无新事件则切为"agent 正在思考…"，让用户明确知道循环在推进而非卡死。
+function showWait(msg) {
+  const b = $('waitBanner');
+  if (!b) return;
+  b.innerHTML = `<span class="wait-dot"></span><span class="wait-text">${esc(msg)}</span>`;
+  b.hidden = false;
+}
+function hideWait() {
+  const b = $('waitBanner');
+  if (b) b.hidden = true;
+}
 
 // 点击反馈：按钮短暂变为 ✓ 成功 / ✗ 失败，让用户明确知道点击结果。
 // ok=true 绿色、ok=false 红色；约 1.6s 后还原按钮文案与状态。
@@ -66,23 +84,39 @@ function renderState(state) {
   [...rail.children].forEach(li => li.classList.toggle('is-active', li.dataset.state === state));
 }
 
-// ───────── 底层 JSON → 自然语言翻译 ─────────
+// ───────── 底层 JSON → 自然语言翻译（对齐 CLI ConsoleSink 的 Emoji 短句） ─────────
 function describeAction(p) {
   const a = p.args || {};
+  lastTool = p.tool; // 记给下一条 observation 成功提示选词
   switch (p.tool) {
-    case 'write_file': return `写入文件 <code>${esc(a.path || '')}</code>`;
-    case 'read_file':  return `读取文件 <code>${esc(a.path || '')}</code>`;
-    case 'list_dir':   return `列出目录 <code>${esc(a.path || '.')}</code>`;
-    case 'run_shell':  return `执行 shell <code>${esc(truncate(a.command || '', 80))}</code>`;
-    case 'run_tests':  return `运行测试 <code>${esc(truncate(a.command || '', 80))}</code>`;
-    case 'finish':     return `结束循环`;
-    default:           return esc(p.tool);
+    case 'write_file': return `📄 写入文件 <code>${esc(a.path || '')}</code>`;
+    case 'read_file':  return `📖 读取文件 <code>${esc(a.path || '')}</code>`;
+    case 'list_dir':   return `📂 列出目录 <code>${esc(a.path || '.')}</code>`;
+    case 'run_shell':  return `⚙️ 执行命令 <code>${esc(truncate(a.command || '', 80))}</code>`;
+    case 'run_tests':  return `🧪 运行测试 <code>${esc(truncate(a.command || '', 80))}</code>`;
+    case 'finish':     return `🏁 结束循环`;
+    default:           return `🔧 ${esc(p.tool)}`;
+  }
+}
+
+// observation 成功提示词：承接上一 action 的工具类型
+function obsSuccess() {
+  switch (lastTool) {
+    case 'write_file': return '已写入';
+    case 'read_file':  return '已读取';
+    case 'list_dir':   return '已列出';
+    case 'run_tests':  return '测试通过';
+    case 'run_shell':  return '执行完成';
+    default:           return '完成';
   }
 }
 
 // ───────── 事件渲染 ─────────
 function renderEvent(ev) {
   const id = `<span class="e-id">#${ev.id}</span>`;
+  if (ev.type === 'thought') {
+    return renderThought(ev, id);
+  }
   if (ev.type === 'action') {
     return `<li class="event event--action">${id}<span class="e-body">${describeAction(ev.payload)}</span></li>`;
   }
@@ -92,19 +126,31 @@ function renderEvent(ev) {
   if (ev.type === 'approval_request') {
     const a = ev.payload?.action || {};
     const cmd = a.args?.command ? ` <code>${esc(truncate(a.args.command, 60))}</code>` : '';
-    return `<li class="event event--approval_request">${id}<span class="e-body">等待审批 · ${esc(a.tool || '?')}${cmd}</span></li>`;
+    return `<li class="event event--approval_request">${id}<span class="e-body">🔐 等待审批 · ${esc(a.tool || '?')}${cmd}</span></li>`;
   }
   if (ev.type === 'approval_decision') {
     const p = ev.payload || {};
     const deny = p.decision === 'deny';
-    const txt = deny ? `已拒绝${p.reason ? ' · ' + esc(p.reason) : ''}` : '已批准';
+    const txt = deny ? `🚫 已拒绝${p.reason ? ' · ' + esc(p.reason) : ''}` : '✅ 已批准';
     return `<li class="event event--approval_decision${deny ? ' is-deny' : ''}">${id}<span class="e-body">${txt}</span></li>`;
   }
   if (ev.type === 'halt') {
-    const reason = ev.payload?.reason ?? JSON.stringify(ev.payload);
-    return `<li class="event event--halt">${id}<span class="e-body">循环结束 · ${esc(reason)}</span></li>`;
+    const reason = ev.payload?.reason ?? 'unknown';
+    return `<li class="event event--halt">${id}<span class="e-body">🏁 循环结束 · ${esc(reason)}</span></li>`;
   }
-  return `<li class="event">${id}<span class="e-body">${esc(JSON.stringify(ev.payload))}</span></li>`;
+  // 兜底：废除裸露 JSON 打印，仅显示事件类型
+  return `<li class="event event--system">${id}<span class="e-body">${esc(ev.type)}</span></li>`;
+}
+
+// 大模型思考气泡：Anthropic 极简风的"笔记本边注"——serif 斜体 + 暖灰墨 +
+// 左侧发丝细线 + 柔色底，多段自然语言以 pre-wrap 原样保留，配 💭 标记。
+function renderThought(ev, id) {
+  const p = ev.payload;
+  const text = (p && typeof p === 'object' && 'text' in p) ? String(p.text) : String(p ?? '');
+  if (!text) return '';
+  return `<li class="event event--thought">${id}` +
+    `<div class="thought-body"><span class="thought-mark">💭</span>` +
+    `<span class="thought-text">${esc(text)}</span></div></li>`;
 }
 
 function renderObservation(ev, id) {
@@ -113,15 +159,12 @@ function renderObservation(ev, id) {
   if (p && typeof p === 'object' && 'errorType' in p) {
     return feedbackCard(id, p);
   }
-  // 成功：退出码 0 → 极简绿底细线卡片（测试通过 / shell 成功）
-  if (p && p.exitCode === 0) {
-    return `<li class="event event--feedback-ok">${id}<span class="e-body">测试通过 · 退出码 0</span></li>`;
+  // 失败：提取 error/stderr 首段
+  if (p && p.ok === false) {
+    return `<li class="event event--observation">${id}<span class="e-body">❌ ${esc(truncate(p.error || p.stderr || '失败', 120))}</span></li>`;
   }
-  // 普通观察气泡
-  let body = '观察';
-  if (p && p.ok === false) body = '执行失败 · ' + esc(truncate(p.error || p.stderr || '', 120));
-  else if (p && typeof p.content === 'string') body = esc(truncate(p.content, 120));
-  return `<li class="event event--observation">${id}<span class="e-body">${body}</span></li>`;
+  // 成功：按上一动作工具给极简提示（测试通过 / 已写入 …），不倾倒 stdout/content
+  return `<li class="event event--feedback-ok">${id}<span class="e-body">✅ ${obsSuccess()}</span></li>`;
 }
 
 // 测试失败：卡其色 Blockquote 引用卡片，醒目提示断言失败的行号
@@ -255,21 +298,54 @@ async function renderConfigStatus() {
 async function poll() {
   try {
     const evs = await fetch(`/api/events?since=${since}`).then(r => r.json());
+    let state = null;
     if (evs.length) {
       since = evs[evs.length - 1].id;
+      lastEventAt = Date.now();
+      hideWait(); // 首个事件到达即收起"等待响应"提示
       appendEvents(evs);
-      renderState(deriveState(allSeen.concat(evs)));
+      state = deriveState(allSeen.concat(evs));
+      renderState(state);
       allSeen = allSeen.concat(evs).slice(-200);
+    } else {
+      state = deriveState(allSeen);
+    }
+    if (state === 'HALTED') {
+      hideWait();
+    } else if (state && evs.length === 0 && Date.now() - lastEventAt > 3500) {
+      // 运行中长时间无新事件 → 切换为"思考中"，让用户知道循环仍在推进
+      showWait('agent 正在思考…');
     }
     await renderApprovals();
   } catch {}
 }
 
 // ───────── 用户动作 ─────────
-$('start').onclick = () => {
+$('start').onclick = async () => {
   // 任务框留空时给一个默认演示任务，避免空点击静默无反馈——离线降级下也能直接看到自修正闭环
   const task = $('task').value.trim() || 'implement add(a,b) returning the sum, verified by Jest';
-  postWithFeedback($('start'), '/api/task', { task, cwd: $('cwd').value }, null, '已提交');
+  const btn = $('start');
+  // 启动后驻留"等待大模型响应中…"，首事件到达或循环结束前持续显示
+  lastEventAt = Date.now();
+  showWait('等待大模型响应中…');
+  try {
+    const r = await fetch('/api/task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task, cwd: $('cwd').value }),
+    });
+    if (!r.ok) {
+      // 409 busy：已有任务在跑；其他错误一并提示
+      hideWait();
+      const msg = r.status === 409 ? '已有任务在运行' : `提交失败 (${r.status})`;
+      flash(btn, false, msg);
+      return;
+    }
+    flash(btn, true, '已提交');
+  } catch (e) {
+    hideWait();
+    flash(btn, false, '网络错误');
+  }
 };
 $('setkey').onclick = () => {
   const key = $('apikey').value;
@@ -288,6 +364,7 @@ $('clearEvents').onclick = () => {
   list.innerHTML = '<li class="event event--empty">已清空显示（事件仍在后端）。</li>';
   lastIter = 0;
   $('iterCounter').textContent = 'iter 0';
+  hideWait();
   flash($('clearEvents'), true, '已清空');
 };
 

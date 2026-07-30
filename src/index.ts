@@ -29,7 +29,7 @@ import type { ApprovalGateway } from './approval/approvalGateway';
 import { startWebServer } from './web/webServer';
 import { parseArgs } from './cli/args';
 import { loadEnvFile } from './cli/envLoader';
-import { rlAsk, runRepl, stripActionFences } from './cli/repl';
+import { rlAsk, runRepl } from './cli/repl';
 
 export function greet(name: string): string {
   return `hello, ${name}`;
@@ -118,20 +118,9 @@ export function makeLoopFactory(opts: LoopFactoryOpts) {
       // 无有效 Key → 离线降级，确定性自修正演示
       llm = new ScriptedMock(offlineDemoActions());
     }
-    // 人性化流式：CLI console 模式实时打印大模型自然语言解释（过滤裸露 action 围栏）
-    if (opts.console) {
-      const inner = llm;
-      llm = {
-        complete: async (messages) => {
-          const r = await inner.complete(messages);
-          const said = stripActionFences(r.text);
-          if (said) console.log(`🤖 ${said}`);
-          return r;
-        },
-      };
-    }
-    // 漏洞 1 修复：CLI console 模式实时打印事件流（action/observation/approval/halt）；
-    // 与 EventStore fan-out，使前端轮询与终端流式两不误
+    // 人性化事件流：AgentLoop 已把"思考过程"作为 thought 事件发出，
+    // ConsoleSink 统一渲染 🤖 行 + action/observation/approval/halt 自然语言翻译；
+    // EventStore 同步 fan-out，前端轮询与终端流式两不误。
     const sink: EventSink = opts.console
       ? { emit: (e) => { opts.eventStore.emit(e); consoleSink.emit(e); } }
       : opts.eventStore;

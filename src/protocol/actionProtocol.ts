@@ -25,3 +25,11 @@ export const ActionProtocol = {
     return out;
   },
 };
+
+// 剥除 LLM 回复中裸露的 ```action 围栏代码块，只保留自然语言思考文本。
+// 纯函数，离线可单测；AgentLoop 用它把"思考过程"剥出来作为 thought 事件存入 EventStore，
+// CLI 终端流也复用它（见 ConsoleSink / repl）。
+// 兼容未闭合围栏（大模型偶发漏写结尾三反引号），否则会把半截 JSON 当自然语言泄漏。
+export function stripActionFences(text: string): string {
+  return text.replace(/```action\s*[\s\S]*?(?:```|$)/g, '').trim();
+}

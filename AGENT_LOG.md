@@ -560,3 +560,29 @@
   - **被锁定的 worktree 不强删**：lock 由活跃会话持有时，`-f -f` 会破坏该会话工作区——留它在已合并旧提交上无害，等会话结束再清。
   - **学术诚信边界**：REFLECTION.md 缺失时，AI 只能提供问题提纲骨架、明确标注"未代写正文"，正文必须本人写——这是 §6 硬约束，不留模糊空间。
 - **下一步（用户侧）**：本人撰写 REFLECTION.md 正文（1500–2500 字）；另一会话结束后清理 `fix/web-offline-fallback` worktree 与分支。
+
+---
+
+### 2026-07-30 · 阶段 23：Web 事件流增强——LLM 思考事件 + 人性化日志 + 等待提示（feat）
+
+- **背景**：Web 面板事件流此前仅展示底层 JSON，缺失 CLI 已有的"自然语言思考过程"与"人性化动作翻译"。本轮全栈补齐：后端把大模型回复剥除 action 围栏后的纯自然语言思考作为新事件类型存入 `EventStore` 供前端轮询；前端废除裸 JSON、Action/Observation 翻译为带 Emoji 短句、为思考文本设计 Anthropic 极简气泡、启动后驻留"等待大模型响应中"提示。
+- **Superpowers 技能**：`using-git-worktrees`（worktree 隔离）、`test-driven-development`（红→绿：先写 thought 事件 / ConsoleSink thought / staticFrontend 断言）、`frontend-design`（思考气泡"笔记本边注"签名元素设计）。
+- **后端改动**：
+  - `src/types.ts`：`EventType` 增加 `'thought'`。
+  - `src/protocol/actionProtocol.ts`：把 `stripActionFences`（纯函数）从 `cli/repl.ts` 上移至此——供 `AgentLoop` 复用，消除 loop→cli 反向依赖；`cli/repl.ts` 改为 re-export 保兼容。
+  - `src/loop/agentLoop.ts`：收到 `resp.text` 后 `stripActionFences` 剥围栏，非空则 `emit({type:'thought', payload:{text}, iter})`，先于 action 事件。纯围栏回复（ScriptedMock）→ 空文本 → 不发空 thought。
+  - `src/loop/eventSink.ts` `ConsoleSink`：新增 `thought` case 渲染 `🤖 <多段文本>`（不截断）。
+  - `src/index.ts`：移除 `makeLoopFactory` 中重复的 🤖 LLM 包装器——思考现由 thought 事件经 ConsoleSink 统一渲染（单一事件源，CLI 与 EventStore fan-out 两不误）。
+  - `src/llm/offlineDemo.ts`：给离线演示每轮加入自然语言思考（`thinkAct`），让无 Key 的 web 面板默认演示即可看到思考气泡与自修正闭环。
+- **前端改动**（`src/web/public/`）：
+  - `app.js`：`describeAction` 加 Emoji 对齐 CLI（📄 写入文件 / 📖 读取 / 📂 列目录 / ⚙️ 执行命令 / 🧪 运行测试 / 🏁 结束）；`renderObservation` 成功按上一工具选词（✅ 测试通过/已写入…），失败 ❌ + error 首段，不再倾倒 stdout/content；新增 `renderThought` 思考气泡；`renderEvent` 兜底废除 `JSON.stringify(payload)` 裸 JSON；新增 `showWait/hideWait`——启动循环后驻留"等待大模型响应中…"，首事件到达/循环结束收起，运行中空闲 >3.5s 切"agent 正在思考…"；`start` 改直连 fetch 处理 409 busy。
+  - `index.html`：事件流上方加 `<div id="waitBanner" class="wait-banner" hidden>`。
+  - `style.css`：思考气泡（签名元素——serif 斜体 + 暖灰墨 + 左侧发丝细线 + 柔色底 + `pre-wrap` 保留多段 + `max-height` 滚动）；等待横幅（陶土柔底 + 脉动圆点，`prefers-reduced-motion` 关闭脉动）；`.event--system` 兜底。
+- **测试（TDD）**：`test/agentLoop.test.ts` 新增 2 例（thought 先于 action 且围栏已剥除；纯围栏不发空 thought）；`test/consoleSink.test.ts` 新增 1 例（🤖 多段不泄漏围栏/JSON）；`test/staticFrontend.test.ts` 新增 2 例（app.js 含 thought 气泡/等待提示/Emoji/废除裸 JSON；index.html 含 waitBanner）；`test/cliStreaming.test.ts` 注释随离线演示含自然语言而更新。
+- **设计自评**（frontend-design）：保留既有 Anthropic 暖白 token 体系（brief 明确要求"Anthropic 极简风"，brief's own words win）；签名元素 = 思考气泡，做成"笔记本边注"——serif 斜体/暖灰墨/左发丝线，与 action（暖纸底）/observation（透明）形成安静旁注的视觉分级，而非再加一个发光卡片。等待横幅用同源陶土柔底 + 脉动点，克制不喧宾夺主。
+- **验证**：`npm run build` 通过；`npm test` 29 suites / 208 passed + 1 skipped（real-llm 集成）；提交前 `grep 'sk-'` 暂存区无明文 key 命中。
+- **教训**：
+  - **"思考"必须进事件流而非只在终端包装器**：原 🤖 包装器只服务 CLI console 模式，web 无感知。把思考提成 `thought` 事件后，CLI 与 web 共用同一事件源——ConsoleSink 渲染终端行、EventStore 供前端轮询，杜绝"两端各写一套翻译"的漂移。
+  - **纯函数上移消除反向依赖**：`stripActionFences` 原在 `cli/repl.ts`，`AgentLoop` 要用就会 loop→cli 反向依赖。上移到 `protocol/actionProtocol`（围栏本就属协议层），repl re-export 保兼容——分层更干净。
+  - **废除裸 JSON 兜底要给中性替代**：默认分支原 `JSON.stringify(payload)` 改为 `esc(ev.type)` 极简系统行，避免未知事件类型回退成"看似 bug 的 JSON 堆"。
+- **commit**：见 `feat(web): enhance UI event stream with LLM thoughts and human-friendly logs`。

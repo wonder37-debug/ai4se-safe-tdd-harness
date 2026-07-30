@@ -4,7 +4,7 @@ import { Guardrail } from '../guardrail/guardrail';
 import { ApprovalGateway } from '../approval/approvalGateway';
 import { FeedbackClassifier } from '../feedback/feedbackClassifier';
 import { MemoryStore } from '../memory/memoryStore';
-import { ActionProtocol } from '../protocol/actionProtocol';
+import { ActionProtocol, stripActionFences } from '../protocol/actionProtocol';
 import { Action, Message, Observation, SessionState } from '../types';
 import { EventSink, noopSink } from './eventSink';
 
@@ -60,6 +60,13 @@ export class AgentLoop {
         return { haltReason: 'provider_error', iterations: iter };
       }
       this.messages.push({ role: 'assistant', content: resp.text });
+      // 大模型"思考过程"：剥除 action 围栏后的纯自然语言文本，作为 thought 事件存入
+      // EventStore（供 web 前端渲染思考气泡）并 fan-out 到 ConsoleSink（CLI 终端 🤖 行）。
+      // 纯围栏回复（无自然语言，如 ScriptedMock 离线演示）→ said 为空 → 不发空 thought。
+      const said = stripActionFences(resp.text);
+      if (said) {
+        this.sink.emit({ type: 'thought', payload: { text: said }, iter });
+      }
       const acts = ActionProtocol.parse(resp.text);
       if (acts.length === 0) {
         this.messages.push({ role: 'user', content: 'Observation: no action block found; emit a fenced ```action {...}``` block' });

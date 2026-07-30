@@ -8,9 +8,10 @@ import * as fsp from 'fs/promises';
 import * as path from 'path';
 
 // 人性化流式：console:true 时
-// ① LLM 响应中的裸露 ```action 围栏被过滤，终端只展示自然语言解释；
-// ② action/observation 翻译为自然语言行，不再 JSON.stringify。
-// 离线 ScriptedMock 响应全是围栏、无自然语言 → 过滤后无 🤖 行；但 action/observation 已人性化且无围栏泄漏。
+// ① AgentLoop 把 LLM 回复剥除 ```action 围栏后的自然语言思考作为 thought 事件发出，
+//    ConsoleSink 渲染 🤖 行；action/observation 翻译为自然语言行，不再 JSON.stringify。
+// 离线 ScriptedMock 演示回复含自然语言思考 + 围栏 → 终端出现 🤖 思考行，
+// 且 action/observation 已人性化；关键：终端绝不泄漏裸露 ```action 围栏与 "tool" JSON 字面。
 
 test('console:true 人性化流式：翻译 action/observation，过滤裸露 action 围栏', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'cli-stream-'));

@@ -80,6 +80,8 @@
         <h2 class="eyebrow">事件流</h2>
         <button id="clearEvents" class="btn btn--ghost">清空</button>
       </div>
+      <!-- 启动后驻留的等待/思考提示：首事件到达或循环结束前持续显示 -->
+      <div id="waitBanner" class="wait-banner" hidden aria-live="polite"></div>
       <ol class="stream" id="events" aria-live="polite">
         <li class="event event--empty">等待事件……提交任务后，这里会以自然语言实时流出 agent 的每一步。</li>
       </ol>
