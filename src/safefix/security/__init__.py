@@ -1,0 +1,1 @@
+"""Security subpackage: guardrail policy (defense-in-depth) + human approval."""
