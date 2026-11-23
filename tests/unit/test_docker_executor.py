@@ -42,7 +42,11 @@ async def test_hardened_argv(tmp_path):
     assert argv[0] == "docker" and argv[1] == "run"
     assert "--rm" in argv
     assert "--network" in argv and argv[argv.index("--network") + 1] == "none"
-    assert "--user" in argv and argv[argv.index("--user") + 1] == "1000:1000"
+    # non-root, matching the workspace owner (Linux CI uid 1001; Windows uid 0 -> default)
+    st = tmp_path.stat()
+    expected_user = "1000:1000" if st.st_uid == 0 else f"{st.st_uid}:{st.st_gid}"
+    assert "--user" in argv and argv[argv.index("--user") + 1] == expected_user
+    assert not expected_user.startswith("0:")
     assert "--cap-drop" in argv and argv[argv.index("--cap-drop") + 1] == "ALL"
     assert "--security-opt" in argv and "no-new-privileges" in argv
     assert "--memory" in argv and "--cpus" in argv and "--pids-limit" in argv
