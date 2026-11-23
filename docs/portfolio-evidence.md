@@ -41,7 +41,7 @@
    - 证据：`benchmarks/results/mock-pipeline-validation/`（15 运行，**标注 MOCK**）
    - 测试：`tests/unit/test_evaluation.py`
 
-8. **251 个离线单元测试（5 个 Windows symlink 权限 skip，Linux CI 执行），覆盖率 88%，ruff 全绿**
+8. **Windows 离线单元测试 247 通过、6 跳过（symlink/mkfifo 权限），覆盖率 88%，ruff 全绿**
    - 复现：`uv run pytest tests/unit --cov=safefix`
 
 9. **真实模型（qwen3.8-flash）独立验证的自动修复 ×3**
@@ -55,9 +55,10 @@
     - A 组预置源码+复现证据，与 B/C 信息对等；v1（A 0/5）因方法学缺陷仅作历史存档
     - 复现：`uv run safefix eval --suite benchmarks/suite.yaml --mode real --variants A,B,C`
 
-11. **验证中发现并修复 4+19 个工程缺陷**（迁移期 4 个 + PR review 三轮 19 条，
+11. **验证中发现并修复 4+24 个工程缺陷**（迁移期 4 个 + PR review 五轮 24 条，
     含 .git 元数据注入、symlink 泄漏、配置伪造 verified、容器残留、宿主内存耗尽、
-    灾难正则挂死等），均有回归测试——见 docs/verification/review-fixes.md
+    灾难正则挂死、非 ASCII 路径转义绕过防篡改、二进制补丁不可应用等），
+    均有回归测试——见 docs/verification/review-fixes.md
 
 12. **真实 LLM 验收测试强制 verified**（paginate + held-out querystring，2 passed）
     - 复现：`SAFEFIX_REAL_LLM=1 uv run pytest tests/integration/test_real_llm.py`

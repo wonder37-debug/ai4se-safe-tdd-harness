@@ -664,3 +664,45 @@
   verified，98.5s）；v2 真实 A/B/C：A 2/5 · B 5/5 · C 5/5（92,959 tokens）；v1 标记方法学
   缺陷存档；ruff/build/净室安装全过。
 - 报告：docs/verification/review-fixes.md（逐条映射）+ evaluation/portfolio/README 更新。
+
+---
+
+# PR #1 Review 第二~五轮修复（2026-11-23 续）
+
+每轮均为 reviewer 针对上一轮修复代码提出的新问题；全部先写 RED 回归测试再修复（TDD），
+逐条映射见 docs/verification/review-fixes.md §13–§24。
+
+- **第二轮**（commit `e88364d`，2 P1）：root 宿主 chown 跟随 symlink 可改宿主文件所有者 →
+  chown 永不跟随 symlink；测试文件类型变更（T）与 copy（C）绕过防篡改 → name-status 纳入
+  T/C，rename/copy 记录两端路径都判定。
+- **第三轮**（commit `10c0400`，4 P1 + 1 P2）：容器可写挂载下写入 `.git/config` 的 clean
+  filter 被宿主 git 执行 → 宿主侧读取改用冻结的 sanitized git 快照；容器提交移动 HEAD 使
+  防篡改/补丁导出失去原始基准 → 快照同时固定原始 HEAD；rename 记录只查目标路径 → 双端检查；
+  memory symlink 把宿主文件注入 system prompt → 记忆读取加围栏；截断的 git 输出被当作完整
+  补丁交付 → 显式失败而非静默不完整。
+- **第四轮**（commit `0b5ea14`，2 P1）：`.gitignore` 可隐藏受保护文件 → untracked 枚举不再依赖
+  工作区 ignore 规则，改用 harness 固定规则；`read_file` 读 FIFO 挂死宿主事件循环 →
+  `stat.S_ISREG` 拒绝非普通文件 + 有界读取。同轮修复 Linux CI 测试环境（clone 内缺 git
+  identity 导致 exit 128，属测试环境而非产品缺陷）。
+- **第五轮**（1 P1 + 2 P2，git 路径编码与二进制补丁，本次提交）：
+  - `4665584602`（P1）非 ASCII 路径被 git 默认输出引号转义后绕过 tests_untouched →
+    name-status 改 `-z`（NUL 分隔原始路径），按状态 token 解析（R/C 占两个路径）。
+  - `4665584617`（P2）转义路径导致新增文件静默遗漏出补丁 → `untracked_files` 用
+    `ls-files --others -z`，原始路径直接进 `--no-index` diff，绝不 strip。
+  - `4665584631`（P2）二进制变更导出不可应用 → tracked 与 `--no-index` diff 统一加 `--binary`；
+    并发现伴生缺陷：`patch.diff` 以 `write_text` 落盘时 Windows 文本模式把 `\n` 转 `\r\n`
+    损坏二进制补丁 → 改 `write_bytes` 原始字节。
+  - 回归测试：`tests/unit/test_round5_security.py`（3 用例，其中二进制用例用
+    `git apply --check` 在 base 状态真实校验补丁可应用性，非仅断言文本）。
+- **收尾实测**（Windows 本机，含第五轮改动）：
+  - `pytest tests`：**255 passed, 8 skipped**（6 Windows symlink/mkfifo 权限 + 2 门控真实 LLM），113.8s；
+    `pytest tests/unit` 单独：247 passed, 6 skipped；覆盖率 **88%**。
+  - Docker 沙箱集成：**8 passed**（含容器无泄漏、沙箱内完整修复）。
+  - 真实 LLM 验收（`SAFEFIX_REAL_LLM=1`）：**2 passed**，107.3s，强制 verified。
+  - `ruff check` / `ruff format --check`（CI 范围 `src/safefix tests`）：全绿（93 files already formatted）。
+- **文档校正**：README 与 portfolio-evidence 以单元套件口径记录 **247 通过、6 跳过**，
+  修复报告单列含 Docker 的全量结果。五轮共处理 **24 条** review 意见。
+- **凭据**：全程仅存 gitignored `.env`，未打印、未提交、未写入 shell 历史。
+- **提交前复核**（2026-11-23，`verification-before-completion` / `finishing-a-development-branch`）：
+  Windows 全量 247 通过、16 跳过，覆盖率 88%。本机 Docker daemon 不可用，8 个 Docker 集成用例跳过，
+  2 个真实 LLM 用例保持门控关闭，另有 6 个 Windows 文件权限相关跳过。Ruff 检查与格式校验通过。

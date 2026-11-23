@@ -40,7 +40,7 @@
   A/B/C 基线（单发 / 基础循环 / 完整 SafeFix），JSON + CSV + Markdown 报告。
 - **CLI（Typer + Rich）**：`demo / fix / eval / report / creds / ui`；
   可选 Streamlit 运行查看器（仅 localhost）。
-- **252 个离线单元测试（6 个因 Windows symlink/mkfifo 权限 skip，Linux CI 真实执行）
+- **253 个离线单元测试（Windows 实测 247 通过，6 个因 symlink/mkfifo 权限跳过）
   + 8 个真实 Docker 沙箱集成测试**，核心机制全部可在
   无网络、无真实 LLM 条件下用 ScriptedMock 验证。
 - **真实模型验证已完成**（qwen3.8-flash，OpenAI 兼容端点）：验收测试强制

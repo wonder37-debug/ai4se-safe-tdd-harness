@@ -101,22 +101,29 @@ async def verify_patch(
         )
     )
 
+    # -z: NUL-separated RAW paths (default output quotes/escapes non-ASCII names,
+    # which would bypass protection; review 4665584602). R/C records carry two paths.
     _, name_status, _ = await _git(
-        workspace, "diff", "HEAD", "--name-status", *DIFF_SAFE_ARGS, git_dir=git_dir
+        workspace, "diff", "HEAD", "--name-status", "-z", *DIFF_SAFE_ARGS, git_dir=git_dir
     )
     tampered = []
-    for line in name_status.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 2:
-            continue
-        status = parts[0][:1]
+    tokens = [t for t in name_status.split("\0") if t != ""]
+    i = 0
+    while i < len(tokens):
+        status = tokens[i][:1]
+        i += 1
+        if status in ("R", "C"):
+            paths = tokens[i : i + 2]
+            i += 2
+        else:
+            paths = tokens[i : i + 1]
+            i += 1
         # M/D/R/T/C all change test content; T (type change, e.g. file -> symlink
         # to a passing helper) must not bypass the check (review 4664964020).
         # Renames/copies carry BOTH paths: moving a test out of collection is
         # tampering even if the destination looks innocent (review 4665182720).
-        paths = parts[1:] if status in ("R", "C") else [parts[-1]]
         if status in ("M", "D", "R", "T", "C") and any(_is_test_path(p) for p in paths):
-            tampered.append(line)
+            tampered.append(f"{status}\t" + "\t".join(paths))
     for rel in await untracked_files(workspace, git_dir):
         if _is_test_path(rel):
             tampered.append(f"A\t{rel}")

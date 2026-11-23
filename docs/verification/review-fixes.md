@@ -1,6 +1,6 @@
-# PR #1 Review 修复报告（12 threads：7 P1 + 5 P2）
+# PR #1 Review 修复报告（五轮共 24 条）
 
-> 基准 SHA：6d8b0c6 → 修复后见 git log。全部 12 条经逐项核对**确认为真实问题**
+> 基准 SHA：6d8b0c6 → 修复后见 git log。第一轮 12 条经逐项核对**确认为真实问题**
 > （无误报、无已修复项），每条均先写能复现失败的回归测试（RED）再修复（GREEN）。
 
 ## P1（7）
@@ -165,13 +165,34 @@
 - 第三轮两个测试在 clone 内 commit，clone 无 git identity；Windows 全局配置掩盖了
   该问题，Linux CI 报 exit 128。修复：测试在 clone 内显式配置 user.email/name。
 
+## 第五轮 review（1 P1 + 2 P2，git 路径编码与二进制补丁）
+
+### 22. thread 4665584602 — 非 ASCII 路径被 git 转义后绕过防篡改
+- **修复**：name-status 改用 `-z`（NUL 分隔原始路径），按状态 token 解析
+  （R/C 双路径），不再 splitlines/split("\t")。
+- **测试**：`tests/unit/test_round5_security.py::test_non_ascii_test_config_path_still_protected`
+  （中文/conftest.py 修改 → tests_untouched 失败）。
+
+### 23. thread 4665584617 — 转义路径导致新增文件静默遗漏
+- **修复**：`untracked_files` 用 `ls-files --others -z`，按 NUL 分割、不 strip，
+  原始路径直接用于 --no-index diff。
+- **测试**：`test_round5_security.py::test_non_ascii_new_file_exported`
+  （新模块.py 完整出现在导出补丁中）。
+
+### 24. thread 4665584631 — 二进制变更导出不可应用
+- **修复**：tracked 与 --no-index diff 统一加 `--binary`；另发现并修复伴生缺陷：
+  patch.diff 以 write_text 落盘时 Windows 文本模式将 \n 转 \r\n 损坏二进制补丁 →
+  改为 write_bytes 原始字节。
+- **测试**：`test_round5_security.py::test_binary_change_exported_as_applicable_patch`
+  （含 NUL 字节文件变更 → 导出含 GIT binary patch 且 `git apply --check` 在 base 状态通过）。
+
 ## 验证汇总（修复后实测）
 
-- 单元：**252 passed, 8 skipped**（6 个 Windows symlink/mkfifo 权限 + 2 个门控真实 LLM；
-  Linux CI 执行这些用例），覆盖率 88%。
+- Windows 单元：**247 passed, 6 skipped**（symlink/mkfifo 权限），覆盖率 88%。
+- Windows 全量（Docker 可用、真实 LLM 门控关闭）：**255 passed, 8 skipped**。
 - Docker 集成：**8 passed**（含容器无泄漏、沙箱内完整修复）。
 - 真实 LLM 验收（`SAFEFIX_REAL_LLM=1`）：**2 passed**（paginate + held-out querystring，
-  均强制 verified；第三/四轮修复后重跑仍 2 passed）。
+  均强制 verified；第三/四/五轮修复后重跑仍 2 passed）。
 - 修正后真实 A/B/C：**A 2/5 · B 5/5 · C 5/5**（92,959 tokens；B 均 8.8 调用、C 均 7.4）。
 - ruff 全绿；`uv build` wheel+sdist；净室安装 demo verified / mock eval 5/5。
 

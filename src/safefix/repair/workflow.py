@@ -170,7 +170,8 @@ async def run_repair(
         rc, patch, diff_err = await full_candidate_diff(ws.path, ws.git_dir)
         if rc != 0:
             raise RuntimeError(f"patch export failed: {diff_err}")
-        (report_dir / "patch.diff").write_text(patch, encoding="utf-8")
+        # raw bytes: text-mode newline translation would corrupt binary patches
+        (report_dir / "patch.diff").write_bytes(patch.encode("utf-8"))
 
         report = await verify_patch(
             ws.path,

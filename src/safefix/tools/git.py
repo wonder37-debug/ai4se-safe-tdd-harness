@@ -110,13 +110,16 @@ _UNTRACKED_SKIP_DIRS = {
 
 
 async def untracked_files(workspace, git_dir: Path | None = None) -> list[str]:
-    """All untracked files, filtered by HARNESS rules (not workspace ignore rules)."""
-    rc, out, _ = await _git(workspace, "ls-files", "--others", git_dir=git_dir)
+    """All untracked files, filtered by HARNESS rules (not workspace ignore rules).
+
+    Uses -z (NUL-separated RAW paths): default output quotes/escapes non-ASCII
+    names, which would corrupt paths (review 4665584617). Never strip() paths.
+    """
+    rc, out, _ = await _git(workspace, "ls-files", "--others", "-z", git_dir=git_dir)
     if rc != 0:
         return []
     result = []
-    for line in out.splitlines():
-        rel = line.strip()
+    for rel in out.split("\0"):
         if not rel:
             continue
         parts = PurePosixPath(rel).parts
@@ -137,7 +140,7 @@ async def full_candidate_diff(workspace, git_dir: Path | None = None) -> tuple[i
     A truncated diff is NEVER delivered as a patch (review 4665182729): explicit
     failure instead of a silently incomplete candidate.
     """
-    rc, tracked, err = await _git(workspace, "diff", "HEAD", *DIFF_SAFE_ARGS, git_dir=git_dir)
+    rc, tracked, err = await _git(workspace, "diff", "HEAD", "--binary", *DIFF_SAFE_ARGS, git_dir=git_dir)
     if rc != 0:
         return rc, tracked, err
     if _TRUNC_MARKER in tracked:
@@ -145,7 +148,15 @@ async def full_candidate_diff(workspace, git_dir: Path | None = None) -> tuple[i
     parts = [tracked] if tracked.strip() else []
     for rel in await untracked_files(workspace, git_dir):
         rc2, out2, err2 = await _git(
-            workspace, "diff", "--no-index", *DIFF_SAFE_ARGS, "--", "/dev/null", rel, git_dir=git_dir
+            workspace,
+            "diff",
+            "--no-index",
+            "--binary",
+            *DIFF_SAFE_ARGS,
+            "--",
+            "/dev/null",
+            rel,
+            git_dir=git_dir,
         )
         if rc2 not in (0, 1):  # --no-index exits 1 when differences exist
             return rc2, "", err2
