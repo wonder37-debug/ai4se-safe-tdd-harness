@@ -35,6 +35,9 @@ class ToolRegistry:
     def __init__(self, tools: list[Tool]):
         self._tools = {t.name: t for t in tools}
 
+    def tools(self) -> list[Tool]:
+        return list(self._tools.values())
+
     def schemas(self) -> list[dict]:
         """OpenAI-style function schemas for native tool calling."""
         return [

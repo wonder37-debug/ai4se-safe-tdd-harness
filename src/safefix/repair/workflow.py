@@ -48,6 +48,7 @@ class RepairTask:
     eval_command: str | None = None
     setup_commands: list[str] = field(default_factory=list)
     budgets: Budgets = field(default_factory=Budgets)
+    tool_names: list[str] | None = None
 
 
 class ExecSummary(BaseModel):
@@ -114,6 +115,8 @@ async def run_repair(
                 RunTestsTool(),
             ]
         )
+        if task.tool_names is not None:
+            registry = ToolRegistry([t for t in registry.tools() if t.name in task.tool_names])
         loop = AgentLoop(
             LoopDeps(
                 llm=provider,

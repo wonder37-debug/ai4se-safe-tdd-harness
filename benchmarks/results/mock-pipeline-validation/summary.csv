@@ -1,0 +1,16 @@
+task_id,variant,status,halt_reason,llm_calls,steps,prompt_tokens,completion_tokens,duration_s,reproducible,patch_generated,failure_category,policy_denials,report_dir
+paginate-offbyone,A-single-shot,verified,cap,1,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\paginate-offbyone__A-single-shot
+paginate-offbyone,B-basic-loop,verified,finish,2,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\paginate-offbyone__B-basic-loop
+paginate-offbyone,C-safefix,verified,finish,2,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\paginate-offbyone__C-safefix
+clamp-wrong-bound,A-single-shot,verified,cap,1,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\clamp-wrong-bound__A-single-shot
+clamp-wrong-bound,B-basic-loop,verified,finish,2,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\clamp-wrong-bound__B-basic-loop
+clamp-wrong-bound,C-safefix,verified,finish,2,1,0,0,0.01600000000325963,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\clamp-wrong-bound__C-safefix
+slugify-edge-separators,A-single-shot,verified,cap,1,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\slugify-edge-separators__A-single-shot
+slugify-edge-separators,B-basic-loop,verified,finish,2,1,0,0,0.015000000013969839,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\slugify-edge-separators__B-basic-loop
+slugify-edge-separators,C-safefix,verified,finish,2,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\slugify-edge-separators__C-safefix
+moving-average-last-window,A-single-shot,verified,cap,1,1,0,0,0.015000000013969839,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\moving-average-last-window__A-single-shot
+moving-average-last-window,B-basic-loop,verified,finish,2,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\moving-average-last-window__B-basic-loop
+moving-average-last-window,C-safefix,verified,finish,2,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\moving-average-last-window__C-safefix
+binary-search-absent,A-single-shot,verified,cap,1,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\binary-search-absent__A-single-shot
+binary-search-absent,B-basic-loop,verified,finish,2,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\binary-search-absent__B-basic-loop
+binary-search-absent,C-safefix,verified,finish,2,1,0,0,0.0,True,True,,0,D:\workspace\ai4se-safe-tdd-harness\benchmarks\results\mock-pipeline-validation\binary-search-absent__C-safefix

@@ -122,3 +122,22 @@ async def test_test_tampering_rejected(tmp_path):
     )
     assert outcome.status != "verified"
     assert any(c.name == "tests_untouched" and not c.passed for c in outcome.verification.checks)
+
+
+async def test_tool_names_restricts_registry(tmp_path):
+    source = materialize_fixture("paginate", tmp_path / "source")
+    fx = load_fixture("paginate")
+    outcome = await run_repair(
+        RepairTask(
+            repo=str(source),
+            issue=fx.meta["issue"],
+            eval_dir=fx.eval_dir,
+            tool_names=["read_file", "apply_patch", "run_tests"],
+        ),
+        provider=ScriptedMock([action("search_code", {"pattern": "x"}), action("finish", {})]),
+        executor=TrustedLocalExecutor(),
+        approval=AutoApproveGateway(),
+        report_dir=tmp_path / "report",
+    )
+    events = (tmp_path / "report" / "events.jsonl").read_text(encoding="utf-8")
+    assert "unknown tool: search_code" in events
