@@ -586,3 +586,33 @@
   - **纯函数上移消除反向依赖**：`stripActionFences` 原在 `cli/repl.ts`，`AgentLoop` 要用就会 loop→cli 反向依赖。上移到 `protocol/actionProtocol`（围栏本就属协议层），repl re-export 保兼容——分层更干净。
   - **废除裸 JSON 兜底要给中性替代**：默认分支原 `JSON.stringify(payload)` 改为 `esc(ev.type)` 极简系统行，避免未知事件类型回退成"看似 bug 的 JSON 堆"。
 - **commit**：见 `feat(web): enhance UI event stream with LLM thoughts and human-friendly logs`。
+
+---
+
+# Python 迁移（SafeFix）· 分支 rewrite/python-safefix
+
+> 2026-11-23 · 任务来源：用户提供的《Rewrite in Python and Upgrade into a Real-World Coding Agent》任务书。
+> 工作流偏差说明：本次按任务书 M0–M5 里程碑增量执行（任务书优先于旧 Superpowers worktree/PR 流程）；
+> TDD 红-绿循环全程保持；未推送远端、未开 PR（任务书明确禁止未经授权推送）。
+
+- **M0 审计**（commit e0c7417）：实测 `npm test` 87 suites / 593 passed / 3 skipped；`npm run build` 成功；
+  Docker daemon 初始未运行（如实记录）。产出 docs/migration/source-audit.md（含 TS→Python 映射与 R1–R10 风险清单）。
+- **M1 核心 parity**（a23f9a0 / 627bfff / 5e04fa6 / 0612448 / 17f2853 / 5930b57）：
+  uv + CPython 3.12.13 骨架；models/协议/护栏/审批/反馈/mock/provider/记忆/凭据/工具/循环，
+  每模块先写测试看红再实现。156 测试时点全绿。教训：shlex.punctuation_chars 是只读属性须构造器传入；
+  Windows 规则在原始串先行匹配（与原版一致），测试预期须按 parity 修正而非改实现。
+- **M2 沙箱**（da7f5f4）：DockerExecutor 加固 argv + 不可用显式拒绝；prepare_workspace clone 隔离；
+  real/mock/demo 显式分离。期间启动 Docker Desktop（D:\Docker）使集成实测成为可能。
+- **M3 修复工作流**（34fcfb0 / 8bdd581）：5 个缺陷 fixture + 纯 Python diff 应用器 + 独立验证器；
+  离线 e2e verified；**真实 Docker 沙箱集成 8 项全过**（含沙箱内完整修复 50.1s）。
+  教训：测试内裸 `python` 在 Windows 解析到无 pytest 的解释器 → 改用 sys.executable 并断言 FAILED 输出，
+  避免"因错误原因而红"的假阳性。
+- **M4 评估**（c364078）：A/B/C runner + JSON/CSV/MD 报告；examples/run_mock_suite.py 15/15 verified
+  （明确标注 MOCK 管线验证，非模型成绩）。
+- **M5 CLI/文档**（04fbaee / 1eb9df7 + 本次文档提交）：Typer/Rich 六命令 + 可选 Streamlit；
+  CI 切换 Python（GitHub unit-test + sandbox-integration；GitLab 保留字面 unit-test job）；
+  沙箱镜像 docker build 实测成功；README 重写 + 架构/安全/评估/限制/迁移报告/简历证据 + 学习文档 00–09。
+- **诚实性记录**：本环境无 .env 凭据 → real-LLM 集成 NOT RUN（显式 skip）；symlink 测试因 Windows 权限 skip；
+  覆盖率 89%（ui_app 未装 streamlit 不计）。所有声明均有测试/运行证据支撑。
+- **TDD 偏差记录**：security/cli_approval.py 一处实现先于测试落盘（同批补测试并验证），其余模块均严格红→绿。
+- **最终验证**：206 unit passed + 1 skipped；8 integration passed；ruff 全绿；`safefix demo` 实测 verified。

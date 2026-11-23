@@ -1,293 +1,148 @@
-# AI4SE-Safe-TDD-Harness
+# AI4SE SafeFix
 
-一个自研的 Coding Agent Harness（Node.js / TypeScript）：手写 agent 主循环 + 可注入 Mock 的 LLM 层、shell 命令护栏 + 人工审批（HITL）、结构化 TDD 反馈闭环。移除真实 LLM（换 `ScriptedMock`）后内核仍可确定性单测——把"治理 / 反馈 / 安全 / 分发"这些工程纪律落实为可单测的代码机制。
+**一个用 Python 自研内核的、测试驱动 + 沙箱隔离的 Coding Agent，用于 Git 仓库中的自动 bug 修复。**
 
-## 项目简介
+> 历史沿革：本仓库最初是 AI4SE 期末项目（Option A: Coding Agent Harness）的 TypeScript 实现。
+> 自 `rewrite/python-safefix` 分支起，维护中的应用代码已**完整迁移为 Python 3.12**（项目名 SafeFix）。
+> 旧 TypeScript 代码保留在 Git 历史与 `main` 分支中，审计见 [docs/migration/source-audit.md](docs/migration/source-audit.md)；
+> 开发/运行 SafeFix **不再需要 Node.js / npm / TypeScript / Jest**。
 
-本项目是 AI4SE 暑期课程项目 A 选项（Coding Agent Harness）。交付的是一个**自研 harness 内核**：把 LLM 包装成一个可靠的编码 agent，而非在现有 agent 框架之上做配置层。核心机制——工具分发、治理拦截、反馈回灌、记忆读写、halt 决策——全部是手写的确定性函数，可用 mock/stub LLM 在**无网络**下独立验证。
+## 产品目标
 
-- **自研主循环** `AgentLoop`：`RUNNING → APPROVAL_PENDING → EXECUTING → HALTED` 手写状态机，编排 LLM / 工具 / 护栏 / 审批 / 反馈。
-- **治理维度 1 — Guardrail（shell 命令治理）**：`shell-quote` token 层**整词匹配**危险模式库，揭穿 `r""m`、引号 / 转义混淆，以及 `bash -c "rm -rf /"` 一类套壳包装（`subshell-bypass`）。覆盖 Linux 与 Windows 双栈：`rm -rf` / `--no-preserve-root`（递归删）、`sudo` / `chmod 777`（提权）、`curl | sh` / `wget | bash`（远程脚本执行）、`DROP TABLE` / `TRUNCATE`（删库）、`> /etc/cron` / `fork-bomb` / 带 `Authorization` 头的出站请求（凭据外泄）；Windows 侧在 tokenize 前按原始串词边界匹配 `del /s|/f`、`rmdir /s`、`Remove-Item -Recurse`。三级处置：`high` 触发人工审批（HITL）并悬停 `y / n / 文本反馈`，`low`（如单文件 `rm`）仅告警，`none` 直行。**状态感知升级**：上一轮动作被拒绝（`lastDenied`）后，任何删除尝试都会被 `deny-escalation` 强制升 `high`，堵住「拒绝后分拆命令绕过」。
-- **反馈维度 2 — FeedbackClassifier（TDD 反馈闭环）**：仅对 `run_tests` 工具的失败输出生效——由 `JestParser` 解析 Jest 的 stderr，分类为 `assertion`（带 `file:line` 与 `hint: adjust implementation so <file>:<line> assertion passes`）、`syntax`（`SyntaxError` / `Unexpected token`，带定位行）或 `other`（测试超时 60s / 无法识别，降级回灌）。结构化 `Feedback` 回灌进下一轮上下文，驱动 agent 自我修正；**若同一断言点连续 2 轮失败**，主循环判定 `HALTED(stuck)` 熔断，避免无限重试。
-- **凭据治理** `EncryptedFileStore`：AES-256-GCM 加密落盘，`status()` 不回显明文；`JsonConfigStore` 以明文 JSON 存放非密的端点配置。
-- **面板解耦配置**：Web 面板可分别录入 `API_KEY`、请求地址（`API_BASE_URL`）、请求模型（`MODEL`），三者独立保存，无需改环境变量即可切换供应商。
-- **最小 Web 面板**：Node `http` 轮询（非 WS），浏览器内提交任务 + 实时事件流 + HITL 审批；无有效 Key 时自动降级离线 `ScriptedMock` 自修正演示。
-- **CLI 三模式**：`--web`（面板）/ `--task "<描述>"`（单次）/ `-i`（交互 REPL，默认）；终端内高危动作触发 `y/n/文本反馈` 悬停审批，反馈文本回灌重定向对话；凭据经 `creds.enc` → `.env` 兜底 → 离线 `ScriptedMock` 三级降级。
-- **Docker 分发**：`docker run -p 8080:8080` 一条命令起面板。
+输入：一个本地 Git 仓库（或 Git URL）+ 自然语言 bug 报告 + 测试命令与预算。
+输出：最小化 Git diff 补丁、修复前后测试证据、独立验证结论、完整执行轨迹、token 用量与耗时。
+**原始仓库绝不会被自动修改**——所有操作发生在一次性隔离工作区中。
 
-## 安装
+## 已实现特性（均有测试佐证）
+
+- **自研 AgentLoop 状态机**（`src/safefix/agent/loop.py`）：显式任务状态、结构化 tool call、
+  人工审批（HITL）、测试反馈回灌、有界重试、取消、7 种终止原因、资源预算
+  （LLM 调用数 / 步数 / 墙钟 / token）。
+- **动作协议**：```` ```action ```` 围栏 JSON + 原生 OpenAI tool calling 双通道；
+  Pydantic **严格模式**校验所有模型生成的工具参数，未知/畸形调用绝不执行。
+- **8 个结构化工具**：`list_files / search_code / read_file / apply_patch / run_tests /
+  git_status / git_diff / finish`。`apply_patch` 为纯 Python unified-diff 最小补丁应用器。
+- **可强制执行的 Docker 沙箱**（`runtime/docker_executor.py`）：非 root、cap-drop ALL、
+  no-new-privileges、无网络、CPU/内存/进程数限额、仅挂载任务工作区、无 Docker socket、
+  不透传宿主环境变量、`--rm` 清理。**Docker 不可用 → 显式报错，绝不静默宿主执行。**
+- **护栏 + 审批纵深防御**（`security/policy.py`）：整词匹配、子壳解包、Windows 规则、
+  拒绝后升级；明确声明其**不是安全边界**（边界是沙箱）。
+- **测试反馈分类**：pytest / Jest / 未知输出兜底；六类错误
+  （pass / assertion / syntax / timeout / infrastructure / unexpected）。
+- **独立验证器**（`repair/verifier.py`）：`finish` 只是声明，成功必须由证据判定——
+  复现测试由红转绿、回归通过、独立 eval 测试通过、禁止修改/删除测试、空补丁拒绝。
+- **LLM Provider**：OpenAI 兼容端点，指数退避 + 半抖动、Retry-After、429/5xx 可重试、
+  4xx AuthError 不重试、token 用量记录；real / mock / demo 三模式**显式分离**，
+  real 模式缺凭据显式报错，绝不静默降级演示。
+- **加密凭据存储**：AES-256-GCM + PBKDF2-HMAC-SHA256（100k 迭代、随机盐、版本化 blob），
+  `safefix creds set/status/clear` 隐藏输入，永不回显明文。
+- **可复现评估**：5 个真实缺陷 fixture（off-by-one / 校验 / 边界 / 数据处理），
+  A/B/C 基线（单发 / 基础循环 / 完整 SafeFix），JSON + CSV + Markdown 报告。
+- **CLI（Typer + Rich）**：`demo / fix / eval / report / creds / ui`；
+  可选 Streamlit 运行查看器（仅 localhost）。
+- **206 个离线单元测试 + 8 个真实 Docker 沙箱集成测试**，核心机制全部可在
+  无网络、无真实 LLM 条件下用 ScriptedMock 验证。
+
+## 架构
+
+```
+safefix CLI (cli.py)
+  → RepairTask / run_repair (repair/workflow.py)
+      1. prepare_workspace：克隆目标仓库 → 一次性副本，记录 base commit
+      2. 可信准备（可选，受控网络）→ 复现失败（证据留存）
+      3. AgentLoop (agent/loop.py)
+           LLMProvider (llm/) ⇄ 动作协议 (agent/protocol.py)
+           → 护栏评级 (security/policy.py) → 高危人工审批 (security/approval.py)
+           → ToolRegistry 严格校验 (tools/registry.py) → 工具执行
+               文件/补丁/git：工作区内受控操作
+               run_tests：Docker 沙箱 (runtime/docker_executor.py)
+           → 反馈分类 (feedback/) 回灌 → 预算/进展感知重试
+      4. git diff 提取 → 独立验证 (repair/verifier.py)
+      5. outcome.json / patch.diff / events.jsonl → 清理工作区
+```
+
+详见 [docs/architecture.md](docs/architecture.md)。
+
+## 快速开始
+
+环境要求：**Python 3.12+**、[uv](https://docs.astral.sh/uv/)、Git；
+真实修复任务需要 **Docker**（Windows 11 推荐 WSL2 Ubuntu + Docker Desktop，见下）。
 
 ```bash
-git clone https://git.nju.edu.cn/241880540/ai4se-safe-tdd-harness.git
-# 或从 GitHub 克隆：
-git clone https://github.com/wonder37-debug/ai4se-safe-tdd-harness.git
-cd ai4se-safe-tdd-harness
-npm ci
+uv sync                      # 创建 .venv 并安装依赖（含 dev 组）
+uv run safefix --help
+uv run safefix demo          # 离线确定性机制演示（无需网络/Docker/凭据）
+uv run pytest tests/unit     # 206 个离线单元测试
 ```
 
-环境要求：Node.js ≥ 20（见 `package.json` 的 `engines`）。本地开发还需 Docker（用于分发镜像构建，见下文「分发命令」）。
+### WSL2 / Docker 设置（Windows 11）
 
-> 仓库不携带任何真实凭据：`.env` 已被 `.gitignore` 排除且必须保持未跟踪，`.env.example` 仅作字段模板（值为空）。首次运行凭据经 Web 面板录入并加密落盘，详见「安全边界说明」。
+1. 安装 Docker Desktop 并启用 WSL2 后端（设置 → General → Use the WSL 2 based engine）。
+2. 在 WSL2 Ubuntu 中克隆本仓库并 `uv sync`（项目可直接在 WSL 内开发运行）。
+3. 验证：`docker info` 可达；`uv run pytest tests/integration -m integration`
+   应全部通过（Docker 不可达时这些测试**显式 skip = NOT RUN**，不会冒充成功）。
+4. 可选：`docker build -t safefix-sandbox:latest .` 构建预装 pytest 的沙箱镜像。
 
-## 运行
-
-### 1. 本地测试（无网络、无真实 LLM，确定性）
+### API 凭据设置（real 模式）
 
 ```bash
-npm test          # 全部单元测试（无网络，含 mock LLM 闭环）
-npm run demo      # §A.6 机制演示三幕
+uv run safefix creds set          # 隐藏输入 API key + 主密码 → ~/.safefix/creds.enc
+export MASTER_PASSWORD=...        # 或写入进程环境（注意 .env 为明文，见安全模型）
+# 或者使用 .env（明文兜底，带告警）：API_KEY / API_BASE_URL / MODEL
+uv run safefix fix --repo /path/to/repo --issue "paginate() 第 1 页返回了第 2 页的内容" --mode real
 ```
 
-`npm test` 与 `npm run demo` 均在无网络、无真实 LLM 下确定性通过——这是内核"移除 LLM 后仍可单测"的硬标准（SPEC §4.4 / §11.3）。
-
-### 2. Web 面板（生产/评审主入口）
-
-构建并启动后访问 http://localhost:8080 ：
+### CLI 示例
 
 ```bash
-npm run build
-$env:MASTER_PASSWORD="写入你的主密码" # 注入主密码环境变量(Windows PowerShell写法)
-node dist/index.js --web          # 监听 $PORT，默认 8080
+safefix demo                                    # 机制演示（护栏拦截 + 反馈闭环 + 独立验证）
+safefix fix --repo PATH --issue "bug 描述" --mode real
+safefix fix --repo PATH --issue-file issue.md --mode real --yes
+safefix eval --suite benchmarks/suite.yaml --mode mock --variants A,B,C   # 管线验证（明确标注 MOCK）
+safefix eval --suite benchmarks/suite.yaml --mode real                    # 真实模型评估
+safefix report .safefix-runs/demo               # 查看运行结论与证据
+safefix ui --run-dir .safefix-runs/demo         # 可选 Streamlit 查看器（uv sync --extra ui）
 ```
 
-面板左侧「凭据与端点」区分三段独立配置（解耦设计，见下）：
-
-| 面板字段 | 落盘位置 | 形态 | 说明 |
-|---|---|---|---|
-| `API_KEY` | `~/.ai4se/creds.enc` | **密文**（AES-256-GCM） | 经主密码加密落盘，`status()` 只回 `{present, source}`，永不回显明文 |
-| 请求地址 (`API_BASE_URL`) | `~/.ai4se/config.json` | **明文 JSON** | 非密，OpenAI 兼容端点，如 `https://api.openai.com/v1` |
-| 请求模型 (`MODEL`) | `~/.ai4se/config.json` | **明文 JSON** | 非密，按供应商填写，如 `gpt-4o-mini` |
-
-三者齐备（主密码 + 端点 + 可解密 key）即可使用在线 `OpenAICompatProvider`，在面板录入 `API_KEY` + 主密码保存（加密落盘），再填请求地址 / 模型后提交任务即可完成真实大模型Agent开发（点击启动循环后会有较大延迟，请耐心等待）；任一缺失则降级离线 `ScriptedMock`，无 Key 也能在浏览器观看完整 TDD 自修正闭环演示。
-
-> ⚠️ **主密码必须两边一致**：面板保存 `API_KEY` 时输入的主密码，与启动进程前设的 `MASTER_PASSWORD` 环境变量必须完全相同。两边不一致时解密会静默失败并降级离线演示——若提交任务后瞬间跑完固定的 add.js 剧本，大概率就是主密码不匹配或凭据未齐备，可用 `GET /api/key/status` 与 `GET /api/config` 自查落盘状态。
-
-### 凭据接入三路径总览
-
-| 路径 | 适用模式 | 做法 | 形态 |
-|---|---|---|---|
-| 1. 面板录入（推荐） | Web | 面板存 `API_KEY`（加密落盘）+ 地址/模型，启动前设 `MASTER_PASSWORD` | 密文 `creds.enc` |
-| 2. 环境变量直给 | Web + CLI | 见下方 PowerShell 示例，设好后直接启动 | 明文（带告警） |
-| 3. `.env` 文件 | 仅 CLI | 复制 `.env.example` 为 `.env` 填值（已 gitignore） | 明文（带告警） |
-
-路径 2 的 PowerShell 写法（当前终端会话有效，关窗失效；无需 `MASTER_PASSWORD`）：
-
-```powershell
-$env:API_KEY="sk-你的真实key"
-$env:API_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"   # 或其它 OpenAI 兼容端点
-$env:MODEL="选择的模型"
-node dist/index.js --web    # 或 -i / --task "..."
-```
-
-三路径决议优先级：`creds.enc`+`MASTER_PASSWORD` > `.env` > 进程环境变量；全部缺失 → 降级离线 `ScriptedMock` 演示（不看任务输入，固定剧本）。克隆仓库后**不需要** `.env` 也能接入真实 LLM（走路径 1 或 2）。
-
-### 3. CLI 命令行模式（交互 REPL / 单次任务）
-
-除 Web 面板外，harness 同样可在终端直接驱动——适合脚本编排、CI 与无浏览器场景。三种模式：
+## 测试与评估
 
 ```bash
-npm run build
-
-# (a) 交互式 REPL（默认）：`harness > ` 循环提示符，连续下达自然语言任务
-node dist/index.js                     # 等价于 -i / --interactive
-node dist/index.js -i
-
-# (b) 单次任务：执行一次后退出
-node dist/index.js --task "实现一个 add(a,b) 函数并用测试验证"
-node dist/index.js --task "..." --cwd "工作区绝对路径"   # 指定工作目录
-node dist/index.js "实现 add"                            # 裸参数简写
-
-# (c) Web 面板（同 §2）
-node dist/index.js --web
-
-# 帮助
-node dist/index.js -h
+uv run pytest tests/unit                        # 离线、确定性、无网络
+uv run pytest tests/integration -m integration  # 真实 Docker 沙箱（daemon 不可达则 skip）
+uv run pytest tests/unit --cov=safefix          # 覆盖率（当前约 89%，ui_app 除外）
+uv run python examples/run_mock_suite.py        # 5 任务 × A/B/C 管线验证（MOCK，非模型成绩）
 ```
 
-**凭据与降级：** CLI 优先读 `~/.ai4se/creds.enc`（需设 `MASTER_PASSWORD` 环境变量解密）；`.env` 的 `API_KEY` / `API_BASE_URL` / `MODEL` 作明文兜底（带告警，SPEC §3.9）；三者均无时自动降级为离线 `ScriptedMock` 自修正演示——零配置即可在终端观看到完整的「写 buggy → 测试失败 → 修正 → 测试通过」闭环。
+真实 LLM 集成测试（`tests/integration/test_real_llm.py`）需要
+`SAFEFIX_REAL_LLM=1` + 有效凭据，否则**明确标记 NOT RUN**。
+本仓库当前未配置凭据，故真实模型修复能力**尚无实测证据**——这是诚实的已知限制。
 
-```bash
-# 离线冒烟（无 Key，终端即跑）
-node dist/index.js --task "implement add" --cwd "临时目录绝对路径"
-# 期望输出：[done] haltReason=finish, iterations=5
-```
+## 安全限制（务必阅读）
 
-**终端内 HITL 人工审批：** 当 agent 试图执行高危动作（如 `rm -rf /`，由 `Guardrail.assess` 判定 `high`），REPL 会在终端悬停并提示：
+- 沙箱隔离的是**命令执行**；Docker 共享内核，不是 VM 级隔离。
+- 护栏是启发式纵深防御，可被创造性命令绕过；真正的边界是沙箱 + 验证器。
+- 依赖安装（可信准备阶段）需要受控网络；模型生成命令执行时网络关闭。
+- `.env` 与进程环境是明文可见的；长期密钥请用加密存储。
+- 提示注入无法根治：仓库内容被声明为不可信数据，验证器拒绝改测试等作弊行为。
 
-```
-⚠️  高危动作待审批:
-  tool: run_shell
-  args: {"command":"rm -rf /"}
-  reasons: recursive-delete: recursive forced deletion
-[y] 批准 / [n] 拒绝 / 或输入文本反馈以重定向: 
-```
+详见 [docs/security-model.md](docs/security-model.md) 与 [docs/limitations.md](docs/limitations.md)。
 
-- 输入 `y` / `yes` → 批准执行；
-- 输入 `n` / `no` → 拒绝；
-- 输入任意文本（如「请改用 trash 而非 rm」）→ 拒绝，**且该文本作为反馈回灌进对话**，agent 下一轮会看到这条拒绝原因并据此重定向——这是「治理拦截 + 反馈闭环」两条代码机制在终端的交汇点。
+## 已知问题与路线图
 
-REPL 任务完成后**不退出进程**，继续等待下一次指令，直到输入 `exit` 或 `quit`。
+见 [docs/limitations.md](docs/limitations.md)。要点：真实 LLM 端到端成绩待测；
+fixture 为自研缺陷复现（非外部 CVE）；Jest/Java/C++ 目标仓库适配器未实现；
+Windows 宿主直接运行沙箱依赖 Docker Desktop（推荐 WSL2）。
 
-### 4. 真实 LLM 集成测试（可选，需联网，可能出现超时情况）
+## 文档索引
 
-```bash
-# 【Windows PowerShell】写法：
-$env:REAL_LLM_TEST="true"
-$env:MASTER_PASSWORD="你的主密码" # 自动解密 ~/.ai4se/creds.enc 里的 Key
-$env:API_BASE_URL="请求地址"
-$env:MODEL="请求模型" 
-npm test -- test/integration/real-llm.test.ts
-```
+- [docs/architecture.md](docs/architecture.md) · [docs/security-model.md](docs/security-model.md)
+- [docs/evaluation.md](docs/evaluation.md) · [docs/limitations.md](docs/limitations.md)
+- [docs/migration/source-audit.md](docs/migration/source-audit.md) · [docs/migration/migration-report.md](docs/migration/migration-report.md)
+- [docs/portfolio-evidence.md](docs/portfolio-evidence.md)（可验证的简历素材）
+- [docs/learning/](docs/learning/)（中文学习指南 00–09，含面试问答）
 
-## 分发命令
+## 许可与致谢
 
-目标评审平台可能为 **Linux 或 Windows**，故给出两条分发路径。
-
-### 路径 A：Docker（推荐，跨平台一致）
-
-```bash
-docker build -t ai4se-safe-tdd-harness .
-docker run -p 8080:8080 -e MASTER_PASSWORD=你的主密码 -v "物理工作区绝对路径:/workspace" ai4se-safe-tdd-harness
-```
-
-启动容器后访问  http://localhost:8080 。
-
-使用方式与本地开发一致（无key降级为机制演示；保存key后使用真实大模型）。在面板录入 `API_KEY` + 主密码保存（加密落盘），再填请求地址 / 模型后提交任务即可。（在 Web 面板输入的「工作区目录」必须固定填写为 /workspace，点击启动循环后会有较大延迟，请耐心等待）。
-
-> Docker 镜像基于 `node:20-bookworm-slim`（Linux）。Linux 直接 `docker build`；Windows / macOS 通过 Docker Desktop 构建（跨平台一致）。
-
-### 路径 B：原生 Node（无需 Docker）
-
-适用于机器未装 Docker 或需直接运行源码的场景：
-
-```bash
-npm ci
-npm run build
-# 【Windows PowerShell】
-$env:MASTER_PASSWORD="写入你的主密码"
-node dist/index.js --web          # Linux / Windows 通用
-```
-
-> 主密码经 `MASTER_PASSWORD` 环境变量传入；生产优先用面板录入 + 加密文件。
-
-## 目录结构
-
-```
-ai4se-safe-tdd-harness/
-├── src/
-│   ├── approval/          # HITL 审批网关：approvalGateway / httpApprovalGateway / cliApprovalGateway
-│   ├── cli/               # CLI 模式：args(参数解析) / envLoader(.env) / repl(交互会话)
-│   ├── creds/             # 凭据与配置：credentialStore(AES-256-GCM) / configStore(明文 JSON) / credResolver(凭据决议)
-│   ├── feedback/          # 反馈分类：feedbackClassifier + jestParser
-│   ├── guardrail/         # 治理护栏：guardrail + dangerPatterns（危险模式库）
-│   ├── llm/               # LLM 层：provider(接口) / openaiCompat(在线) / scriptedMock + offlineDemo(离线)
-│   ├── loop/              # 自研主循环：agentLoop(状态机) + eventSink(事件队列)
-│   ├── memory/            # 记忆读写：memoryStore
-│   ├── protocol/          # 动作协议：actionProtocol（LLM 输出解析）
-│   ├── tools/             # 工具分发：tool(注册表) / fileTools / shellTools
-│   ├── web/               # Web 面板：webServer(http 轮询) + public/(index.html/app.js/style.css)
-│   ├── index.ts           # 入口：buildSystemPrompt + makeLoopFactory + CLI 三模式分发（--web / --task / -i）
-│   └── types.ts
-├── test/                  # 单元测试（无网络，mock LLM）；integration/real-llm.test.ts 可选联网
-├── demo/                  # §A.6 机制演示：mechanism-demo.test.ts + fixtures/
-├── Dockerfile             # 多阶段构建（build → 生产镜像），CMD 带 --web
-├── .gitlab-ci.yml         # unit-test（build 门禁 + coverage）与 docker-build（编译产物校验）
-├── .github/workflows/ci.yml  # GitHub Actions：等价于 .gitlab-ci.yml 的 unit-test / build-check
-├── .env.example           # 字段模板（值为空，不含真实凭据）
-├── package.json           # scripts: test / demo / build / start
-├── tsconfig.json
-├── jest.config.js
-├── SPEC.md                # 规范（含「领域与机制设计」章节）
-├── PLAN.md                # 任务计划（随提交标记完成）
-├── SPEC_PROCESS.md        # 规范流程（含冷启动校验 diff）
-├── AGENT_LOG.md           # 按时间戳的过程证据
-└── REFLECTION.md          # 自述反思（1500–2500 字）
-```
-
-## 安全边界说明
-
-### 威胁模型与对策（详见 SPEC §4.2）
-
-| 威胁 | 路径 | 对策 |
-|---|---|---|
-| Git 提交泄露 | `.env` / 配置进仓 | `.gitignore` 排除 `.env`、`~/.ai4se/`；提交前自查；CI secret-detection |
-| Shell history | `export KEY=` / `-e KEY=` | 一律走加密文件或 `MASTER_PASSWORD` 环境变量；禁止命令行明文传 key |
-| 进程环境可见 | `env` 可读 | 加密文件优先；`.env` 仅 fallback 并告警；运行时不打印 key |
-| 磁盘明文 | `.env` 落盘 | 主路径用 AES-256-GCM 加密文件 `~/.ai4se/creds.enc` |
-| 拦截绕过 | `r""m` / base64 管道 | `shell-quote` token 层匹配，揭穿引号 / 转义混淆 |
-| 相对路径删库 | `rm -rf node_modules` / `rm -rf ./dist` | `recursive-delete` 不再要求根路径前缀，出现 `-rf` / `--no-preserve-root` / `-r`+`-f` 即 `high` |
-| 路径越界 | `read_file /etc/shadow`、`write_file ../../x` | fileTools 工作区路径围栏：解析后越出 `cwd` 直接拒绝 |
-| Web 面板未鉴权 | 公网暴露 `/api/*` | 可选 `HARNESS_TOKEN` bearer 鉴权；容器以非 root（`USER node`）运行 |
-| Windows 删库绕过 | `del /s /q`、`rmdir /s`、`Remove-Item -Recurse` | `matchWindows` 在 tokenize 前按原始串词边界匹配，判 `high` 触发 HITL |
-| 凭据外传 | `curl -H Authorization` | 危险模式库含"带 Authorization 的外发请求"模式 |
-
-### 密码 / 密文 / 明文 的分层设计
-
-系统区分**密**与**非密**两类数据，分别采用不同存储形态：
-
-1. **`API_KEY`（密文落盘）**——这是唯一真正的 secret。浏览器 `POST /api/key` 录入后，用主密码经 PBKDF2 派生密钥（`aes-256-gcm`，100k 轮迭代），加密落盘至 `~/.ai4se/creds.enc`；运行时 `resolve()` 仅在内存解密，`GET /api/key/status` 只返回 `{present, source}`，**绝不回显**明文 key。
-2. **请求地址 `API_BASE_URL` / 请求模型 `MODEL`（明文 JSON 落盘）**——二者不含 secret，仅是供应商端点与模型名。按 §3.1 只要求 API key 加密落盘，故端点 / 模型以明文存于 `~/.ai4se/config.json`，便于查看与跨会话复用，与加密凭据**物理分离**。
-3. **主密码（不落盘）**——解锁加密凭据的口令，经 `MASTER_PASSWORD` 环境变量或面板输入传入，进程内使用、不持久化；丢失后无法解密 `creds.enc`（需重新录入 key）。
-4. **`.env`（明文 fallback，带告警）**——仅作离线开发兜底，生产优先用加密文件；`.env` 已被 gitignore 且必须保持未跟踪。
-
-### 操作要点
-
-- **绝不**在命令行明文传递 key（会进 shell history）。容器内主密码经 `MASTER_PASSWORD` 环境变量传入。
-- 面板录入的 `API_KEY` 经 AES-256-GCM 加密落盘，由主密码解锁；请求地址 / 模型明文存于独立 JSON。
-- `.env` 仅作明文 fallback（带告警）；每次提交前自查仓库内无真实凭据（`grep 'sk-'` 暂存区无命中）。
-
-### 治理护栏的代码边界（机制非提示）
-
-"不要删除数据库"写在 system prompt 里**不算**治理；`Guardrail.assess(action)` 这个确定性函数拦截 `rm -rf /` 才算。本仓库所有核心机制——`Guardrail`、`FeedbackClassifier`、`ToolRegistry.dispatch`、`MemoryStore`、`AgentLoop` 的 halt 判定——均为手写函数，移除真实 LLM 换 `ScriptedMock` 后仍可确定性单测（`npm test` 全绿）。
-
-## 安全加固（security hardening）
-
-以下机制均有对应单测，行为与代码一致：
-
-### Guardrail 匹配语义（递归删除 / 误报）
-
-- **递归删除不再要求根路径**：`recursive-delete` 判定改为「出现 `-rf` 或 `--no-preserve-root` 或（`-r` 且 `-f`）即 `high`」——`rm -rf node_modules`、`rm -rf ./dist` 同样弹审批，不再因相对路径漏拦。
-- **整词 token 匹配去误报**：`has()` 仅在 tokenize 后的词列表上整词匹配，不再对拼接串做子串包含——`echo issue`（含子串 `su`）、`echo curly | sh`（含子串 `curl`）不再误判；`remote-script-exec` 的管道检测改为 token 邻接（`|` 的下一个 token 为 `sh`/`bash`）。`db-destroy` / `cred-exfil` / `system-write` / `fork-bomb` 因语义需要保留对拼接串的子串匹配。
-- **`plain-rm` 设计取舍**：单文件 `rm a.txt` 维持 `low` 仅告警不弹审批（避免审批疲劳）；若上一轮刚被拒绝，`deny-escalation` 会把后续 `rm` 升级 `high`，堵住「拒绝后分拆命令绕过」路径。
-
-### Web 面板鉴权（HARNESS_TOKEN）
-
-设置环境变量 `HARNESS_TOKEN` 后，除 `GET /api/health` 外所有 `/api/*` 必须携带 `Authorization: Bearer <token>`，否则 `401`；未设置则保持本地无认证，但启动时打印醒目告警（切勿公网暴露）；绑定非 `127.0.0.1`/`localhost` 地址同样告警。Docker 镜像已改为 `USER node` 非 root 运行。另外：请求 body 上限 1MB（超出 `413`）；单任务串行，进行中时并发 `POST /api/task` 返回 `409 busy`。
-
-### 工作区路径围栏
-
-`read_file` / `write_file` / `list_dir` 统一校验解析后的绝对路径必须落在工作区 `cwd` 内，越界（如 `/etc/shadow`、`../../escape.txt`）直接返回 `{ ok:false, error:'path escapes workspace' }`，不碰文件系统。
-
-### 审批超时默认 deny
-
-`HttpApprovalGateway` 构造时接受 `timeoutMs`（默认 300000），审批请求挂起超时后自动裁决 `{decision:'deny', reason:'approval timeout'}` 并清理 pending——无人值守时高危动作不会永久阻塞也不会默认放行。
-
-## 架构与数据流
-
-```
-AgentLoop (自研主循环)
-  RUNNING → [Guardrail.assess] → APPROVAL_PENDING → EXECUTING
-                                       │                 │
-                            [observation 回灌]   ToolRegistry.dispatch
-  └─ LLMProvider(OpenAICompat / ScriptedMock)
-     └─ CredentialStore(EncryptedFileStore) ── ConfigStore(JsonConfigStore)
-        └─ HttpApprovalGateway ── WebServer(http 轮询) ── 静态前端
-```
-
-在一轮完整的系统迭代中，数据流运转逻辑如下：状态机首先组装历史上下文（Messages） → 呼叫 LLMProvider.complete 获取决策 → 通过 ActionProtocol.parse 提取动作 → 引入 Guardrail.assess 进行安全审计（high 等级进入 HITL 审批流） → 调用 ToolRegistry.dispatch 分发工具并物理执行。若工具为测试执行且返回非零退出，则由 FeedbackClassifier.parse 进行错误分类与断言定位，并结构化回灌进上下文。当遇到 finish 动作、卡死（stuck）或达到绝对迭代上限时，循环状态机熔断转入 HALTED。所有的系统事件均会被实时推送至内存事件队列，供前端面板轮询。
-
-## 已知限制
-
-- 单任务，不并发。
-- HTTP 轮询而非 WebSocket；`FeedbackClassifier` 稳健识别 Jest 的 `assertion`/`syntax`，其它 runner 回退 `other`。
-- `OpenAICompatProvider` 仅适配单 OpenAI-compatible 供应商（`/v1/chat/completions`）。
-
-## CI
-
-`.gitlab-ci.yml` 定义两个 job：`unit-test`（`npm ci && npm run build && npx jest --coverage`，tsc 类型门禁 + 覆盖率报告）与 `docker-build`（编译产物存在性校验）。机制演示见 `demo/mechanism-demo.test.ts`（`npm run demo`）。
-
-本项目同时支持 GitHub Actions（`.github/workflows/ci.yml`），含 `unit-test`（编译门禁 + `jest --coverage`，产物 `coverage/` 上传并保留 7 天）与 `build-check`（依赖 `unit-test`，校验 `dist/index.js` 编译产物存在）两个 job，行为与上述 GitLab 流水线等价。
-
-## 许可
-
-MIT
+MIT。原始 TypeScript harness 为 AI4SE 课程期末项目（Option A），其自研内核设计
+（依赖注入、离线可测、机制即代码）是本次 Python 重写的行为参考；迁移映射与
+parity 测试见迁移文档。
