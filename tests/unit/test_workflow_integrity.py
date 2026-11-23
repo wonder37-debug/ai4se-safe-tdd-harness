@@ -6,7 +6,9 @@ fair single-shot context (4661696758), root-host writable workspace (4663355656)
 import json
 import os
 import subprocess
+from pathlib import Path
 
+import pytest
 from local_executor import TrustedLocalExecutor
 
 from safefix.agent.state import Budgets
@@ -167,9 +169,73 @@ def test_workspace_exclude_and_root_chown(tmp_path, monkeypatch):
     repo = make_repo(tmp_path, {"app.py": "x = 1\n"})
     chowned = []
     monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
-    monkeypatch.setattr(os, "chown", lambda p, u, g: chowned.append((str(p), u, g)), raising=False)
+    monkeypatch.setattr(
+        os, "chown", lambda p, u, g, follow_symlinks=True: chowned.append((str(p), u, g)), raising=False
+    )
     ws = prepare_workspace(str(repo), dest=tmp_path / "ws")
     exclude = (ws.path / ".git" / "info" / "exclude").read_text(encoding="utf-8")
     assert ".deps/" in exclude and ".safefix-memory/" in exclude and "_eval_verify/" in exclude
     assert chowned, "root host must transfer workspace ownership to sandbox uid"
     assert all(u == 1000 and g == 1000 for _, u, g in chowned)
+
+
+def test_root_chown_does_not_follow_symlinks(tmp_path, monkeypatch):
+    """Regression 4664964008: chown must not touch symlink TARGETS outside the clone."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    target = outside / "host-file"
+    target.write_text("host data\n", encoding="utf-8")
+    repo = make_repo(tmp_path, {"app.py": "x = 1\n"})
+    try:
+        os.symlink(target, repo / "link")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "link"], cwd=repo, check=True, capture_output=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation not permitted on this host")
+    chowned = []
+
+    def spy_chown(p, u, g, follow_symlinks=True):
+        chowned.append((str(p), u, g, follow_symlinks))
+
+    monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
+    monkeypatch.setattr(os, "chown", spy_chown, raising=False)
+    ws = prepare_workspace(str(repo), dest=tmp_path / "ws")
+    assert chowned, "regular files must still be chowned"
+    assert all(not follow for _, _, _, follow in chowned), "chown must not follow symlinks"
+    assert not any(str(target) == p for p, _, _, _ in chowned), "external symlink target was chowned"
+    assert not any((ws.path / "link").resolve() == Path(p) for p, _, _, _ in chowned)
+
+
+async def test_type_change_of_test_file_rejected(tmp_path):
+    """Regression 4664964020: file->symlink type change (T) on a test path is tampering."""
+    from safefix.repair.verifier import verify_patch
+    from safefix.runtime.executor import ExecResult
+
+    repo = make_repo(
+        tmp_path,
+        {
+            "app.py": "def value():\n    return 0\n",
+            "helper.py": "def test_ok():\n    assert True\n",
+            "tests/test_app.py": "from app import value\n\n\ndef test_value():\n    assert value() == 42\n",
+        },
+    )
+    test_file = repo / "tests" / "test_app.py"
+    test_file.unlink()
+    try:
+        os.symlink(repo / "helper.py", test_file)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlink creation not permitted on this host")
+
+    class PassingExecutor:
+        async def run(self, command, *, cwd, timeout):
+            return ExecResult(stdout="2 passed", exit_code=0)
+
+    report = await verify_patch(
+        repo,
+        executor=PassingExecutor(),
+        test_command="python -m pytest -q",
+        repro_command=None,
+        eval_dir=None,
+    )
+    assert not report.verified
+    assert any(c.name == "tests_untouched" and not c.passed for c in report.checks)

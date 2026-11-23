@@ -104,7 +104,9 @@ async def verify_patch(
     tampered = []
     for line in name_status.splitlines():
         parts = line.split("\t")
-        if len(parts) >= 2 and parts[0][:1] in ("M", "D", "R") and _is_test_path(parts[-1]):
+        # M/D/R/T/C all change test content; T (type change, e.g. file -> symlink
+        # to a passing helper) must not bypass the check (review 4664964020).
+        if len(parts) >= 2 and parts[0][:1] in ("M", "D", "R", "T", "C") and _is_test_path(parts[-1]):
             tampered.append(line)
     for rel in await untracked_files(workspace):
         if _is_test_path(rel):

@@ -60,12 +60,19 @@ def _git(cwd: Path | None, *args: str) -> str:
 def _ensure_container_writable(dest: Path) -> None:
     """Root host (native Linux): the clone is root-owned 0755/0644, so a non-root
     container user cannot write it. Transfer ownership to the sandbox uid while
-    KEEPING the container non-root (review 4663355656). No-op elsewhere."""
+    KEEPING the container non-root (review 4663355656). No-op elsewhere.
+
+    Never follow symlinks (review 4664964008): a repo symlink pointing at a host
+    file must not have its TARGET chowned — ownership changes stay strictly on
+    objects inside the clone.
+    """
     if not hasattr(os, "geteuid") or os.geteuid() != 0:
         return
     for path in [dest, *dest.rglob("*")]:
         try:
-            os.chown(path, 1000, 1000)
+            if path.is_symlink():
+                continue
+            os.chown(path, 1000, 1000, follow_symlinks=False)
         except OSError:
             pass
 
