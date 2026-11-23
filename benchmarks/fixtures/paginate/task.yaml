@@ -1,0 +1,18 @@
+id: paginate-offbyone
+title: "Pagination returns the wrong page (off-by-one)"
+language: python
+framework: pytest
+license: MIT (original fixture written for SafeFix)
+defect_class: off-by-one / incorrect boundary handling
+issue: |
+  paginate(items, page, size) in shop/paginate.py is documented as 1-based
+  pagination, but page 1 returns the SECOND slice of the list. The first page
+  is unreachable and every page is shifted by one. Fix the implementation so
+  the documented 1-based semantics hold. Do not modify the tests.
+repro_command: "python -m pytest -q tests/test_paginate.py"
+test_command: "python -m pytest -q"
+setup: []
+budget:
+  max_llm_calls: 12
+  max_steps: 24
+  max_wall_seconds: 300

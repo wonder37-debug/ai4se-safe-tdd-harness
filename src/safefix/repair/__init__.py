@@ -1,0 +1,1 @@
+"""Repair subpackage: product workflow + independent verification."""

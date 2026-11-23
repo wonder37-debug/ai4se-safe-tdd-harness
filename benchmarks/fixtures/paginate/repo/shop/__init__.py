@@ -1,0 +1,1 @@
+"""Shop utilities (SafeFix benchmark fixture)."""
