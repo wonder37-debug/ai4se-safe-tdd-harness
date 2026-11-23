@@ -192,7 +192,11 @@ async def test_malformed_native_tool_arguments_skipped():
                         "message": {
                             "content": "fallback text",
                             "tool_calls": [
-                                {"id": "c", "type": "function", "function": {"name": "read_file", "arguments": "{bad"}}
+                                {
+                                    "id": "c",
+                                    "type": "function",
+                                    "function": {"name": "read_file", "arguments": "{bad"},
+                                }
                             ],
                         },
                         "finish_reason": "tool_calls",

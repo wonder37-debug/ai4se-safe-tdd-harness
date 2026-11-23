@@ -74,7 +74,11 @@ class ListFilesTool:
             base = _fence(ctx.workspace, args.path)
             if not base.is_dir():
                 return Observation(ok=False, error=f"not a directory: {args.path}")
-            entries = _walk(base) if args.recursive else (f for f in sorted(base.iterdir()) if f.name not in _SKIP_DIRS)
+            entries = (
+                _walk(base)
+                if args.recursive
+                else (f for f in sorted(base.iterdir()) if f.name not in _SKIP_DIRS)
+            )
             names = [f.relative_to(base).as_posix() + ("/" if f.is_dir() else "") for f in entries]
         except (OSError, ValueError) as e:
             return Observation(ok=False, error=str(e))

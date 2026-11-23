@@ -1,7 +1,6 @@
 """AgentLoop state machine: parity halt semantics + budgets, cancel, progress-aware retry."""
 
 import asyncio
-from pathlib import Path
 
 from safefix.agent.loop import AgentLoop, LoopDeps
 from safefix.agent.state import Budgets, HaltReason
@@ -9,7 +8,7 @@ from safefix.feedback.classifier import FeedbackClassifier
 from safefix.feedback.pytest_parser import PytestParser
 from safefix.llm.base import LLMResponse
 from safefix.llm.mock import ScriptedMock
-from safefix.models import Action, ApprovalDecision, TokenUsage, ToolCall
+from safefix.models import ApprovalDecision, TokenUsage, ToolCall
 from safefix.runtime.executor import ExecResult
 from safefix.security.approval import AutoApproveGateway, MockApprovalGateway
 from safefix.tools.files import ListFilesTool, ReadFileTool
@@ -51,7 +50,9 @@ class NativeMock:
 def make_loop(tmp_path, responses, *, approval=None, executor=None, budgets=None, **kw):
     registry = ToolRegistry([ReadFileTool(), ListFilesTool(), ApplyPatchTool(), RunTestsTool()])
     deps = LoopDeps(
-        llm=ScriptedMock(responses) if isinstance(responses, list) and all(isinstance(r, str) for r in responses) else responses,
+        llm=ScriptedMock(responses)
+        if isinstance(responses, list) and all(isinstance(r, str) for r in responses)
+        else responses,
         registry=registry,
         workspace=tmp_path,
         approval=approval or AutoApproveGateway(),
@@ -90,7 +91,9 @@ async def test_multi_action_warning(tmp_path):
     two = LIST + "\n" + FINISH
     loop = make_loop(tmp_path, [two, FINISH])
     await loop.run()
-    assert any("仅执行首个 action" in m.content or "only the first action" in m.content for m in loop.messages)
+    assert any(
+        "仅执行首个 action" in m.content or "only the first action" in m.content for m in loop.messages
+    )
 
 
 async def test_high_risk_denied_feeds_back(tmp_path):
@@ -205,7 +208,10 @@ async def test_native_tool_call_finish(tmp_path):
 
 async def test_native_unknown_tool_feedback(tmp_path):
     provider = NativeMock(
-        [LLMResponse(tool_calls=[ToolCall(name="drop_db")]), LLMResponse(tool_calls=[ToolCall(name="finish")])]
+        [
+            LLMResponse(tool_calls=[ToolCall(name="drop_db")]),
+            LLMResponse(tool_calls=[ToolCall(name="finish")]),
+        ]
     )
     loop = make_loop(tmp_path, provider)
     result = await loop.run()

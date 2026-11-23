@@ -25,7 +25,10 @@ _PATTERNS: dict[str, tuple[str, str]] = {
     "recursive-delete": ("high", "recursive/forced deletion (any target path)"),
     "windows-del-recursive": ("high", "Windows recursive/forced deletion (del /s, del /f)"),
     "windows-rmdir-recursive": ("high", "Windows recursive dir removal (rmdir /s, rd /s)"),
-    "windows-remove-item-recurse": ("high", "PowerShell recursive removal (Remove-Item -Recurse, ri -Recurse)"),
+    "windows-remove-item-recurse": (
+        "high",
+        "PowerShell recursive removal (Remove-Item -Recurse, ri -Recurse)",
+    ),
     "privilege-escalation": ("high", "privilege escalation"),
     "remote-script-exec": ("high", "piping remote content into a shell"),
     "db-destroy": ("high", "database destruction"),
@@ -34,7 +37,10 @@ _PATTERNS: dict[str, tuple[str, str]] = {
     "cred-exfil": ("high", "outbound request carrying auth/secret header"),
     "plain-rm": ("low", "single-target rm (no -rf)"),
     "deny-escalation": ("high", "file deletion attempted right after a denied action (split-command bypass)"),
-    "subshell-bypass": ("high", "shell wrapper unwrapped (bash/sh/powershell/cmd/wsl -c); inner command audited"),
+    "subshell-bypass": (
+        "high",
+        "shell wrapper unwrapped (bash/sh/powershell/cmd/wsl -c); inner command audited",
+    ),
 }
 
 _SUBSHELL_DEPTH_LIMIT = 5
@@ -59,7 +65,9 @@ def _tokenize(cmd: str) -> list[str]:
 
 
 def _pipe_to_shell(tokens: list[str]) -> bool:
-    return any(t == "|" and i + 1 < len(tokens) and tokens[i + 1] in ("sh", "bash") for i, t in enumerate(tokens))
+    return any(
+        t == "|" and i + 1 < len(tokens) and tokens[i + 1] in ("sh", "bash") for i, t in enumerate(tokens)
+    )
 
 
 def _match(tokens: list[str]) -> tuple[str, str, str] | None:
@@ -164,7 +172,9 @@ def assess(action: Action, state: SessionState | None = None) -> GuardrailVerdic
     try:
         tokens = _tokenize(cmd)
     except ValueError:
-        return GuardrailVerdict(severity="high", reasons=["tokenize-failed: malformed command, forcing approval"])
+        return GuardrailVerdict(
+            severity="high", reasons=["tokenize-failed: malformed command, forcing approval"]
+        )
 
     res = _assess_tokens(tokens, _SUBSHELL_DEPTH_LIMIT)
     if res is None:

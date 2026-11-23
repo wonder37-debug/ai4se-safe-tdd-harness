@@ -37,7 +37,12 @@ def test_observation_defaults():
 
 def test_feedback_kind_covers_six_classes():
     assert {k.value for k in FeedbackKind} == {
-        "pass", "assertion", "syntax", "timeout", "infrastructure", "unexpected",
+        "pass",
+        "assertion",
+        "syntax",
+        "timeout",
+        "infrastructure",
+        "unexpected",
     }
 
 

@@ -6,7 +6,7 @@ the fenced action protocol still accepts the legacy JSON shape ``{"tool", "args"
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -46,7 +46,7 @@ class Observation(BaseModel):
     content: str | None = None
 
 
-class FeedbackKind(str, Enum):
+class FeedbackKind(StrEnum):
     PASS = "pass"
     ASSERTION = "assertion"
     SYNTAX = "syntax"

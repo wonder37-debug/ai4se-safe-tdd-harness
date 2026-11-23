@@ -31,7 +31,9 @@ def make_registry():
 
 
 async def test_dispatch_validates_and_executes(tmp_path):
-    obs = await make_registry().dispatch(Action(tool="echo", args={"text": "hi"}), ToolContext(workspace=tmp_path))
+    obs = await make_registry().dispatch(
+        Action(tool="echo", args={"text": "hi"}), ToolContext(workspace=tmp_path)
+    )
     assert obs.ok and obs.content == "hi"
 
 
@@ -46,12 +48,16 @@ async def test_invalid_arguments_rejected_without_execution(tmp_path):
 
 
 async def test_wrong_argument_type_rejected(tmp_path):
-    obs = await make_registry().dispatch(Action(tool="echo", args={"text": 5}), ToolContext(workspace=tmp_path))
+    obs = await make_registry().dispatch(
+        Action(tool="echo", args={"text": 5}), ToolContext(workspace=tmp_path)
+    )
     assert not obs.ok
 
 
 async def test_tool_exception_contained(tmp_path):
-    obs = await make_registry().dispatch(Action(tool="boom", args={"text": "x"}), ToolContext(workspace=tmp_path))
+    obs = await make_registry().dispatch(
+        Action(tool="boom", args={"text": "x"}), ToolContext(workspace=tmp_path)
+    )
     assert not obs.ok and "tool exploded" in obs.error
 
 

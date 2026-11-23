@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 from safefix.models import TokenUsage
 
 
-class TaskState(str, Enum):
+class TaskState(StrEnum):
     RUNNING = "running"
     WAITING_APPROVAL = "waiting_approval"
     HALTED = "halted"
 
 
-class HaltReason(str, Enum):
+class HaltReason(StrEnum):
     FINISH = "finish"
     CAP = "cap"
     STUCK = "stuck"

@@ -43,7 +43,8 @@ def normalize_base_url(base_url: str) -> str:
 
 def adapt_messages(messages: list[Message]) -> list[dict]:
     return [
-        {"role": "user", "content": "Observation: " + m.content} if m.role == "observation"
+        {"role": "user", "content": "Observation: " + m.content}
+        if m.role == "observation"
         else {"role": m.role, "content": m.content}
         for m in messages
     ]
@@ -95,7 +96,9 @@ class OpenAICompatProvider:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ):
         if not api_key:
-            raise ValueError("api_key is required for the real provider (set API_KEY or use the encrypted store)")
+            raise ValueError(
+                "api_key is required for the real provider (set API_KEY or use the encrypted store)"
+            )
         self._url = f"{normalize_base_url(base_url)}/v1/chat/completions"
         self._api_key = api_key
         self._model = model
@@ -108,7 +111,7 @@ class OpenAICompatProvider:
         self._sleep = sleep
 
     def _backoff_delay(self, attempt: int) -> float:
-        base = self._base_delay * (self._backoff_factor ** attempt)
+        base = self._base_delay * (self._backoff_factor**attempt)
         return base * (0.5 + random.random() * 0.5)  # half jitter avoids retry thundering herd
 
     async def complete(self, messages: list[Message], tools: list[dict] | None = None) -> LLMResponse:
@@ -131,7 +134,9 @@ class OpenAICompatProvider:
                             await self._sleep(_parse_retry_after(res) or self._backoff_delay(attempt))
                             continue
                         if _retryable_status(res.status_code):
-                            raise ProviderError(f"provider http {res.status_code} (retries exhausted): {text}")
+                            raise ProviderError(
+                                f"provider http {res.status_code} (retries exhausted): {text}"
+                            )
                         if 400 <= res.status_code < 500:
                             raise AuthError(f"auth/http {res.status_code}: {text}")
                         raise ProviderError(f"provider http {res.status_code}: {text}")

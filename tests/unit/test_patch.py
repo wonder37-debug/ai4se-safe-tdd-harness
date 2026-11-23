@@ -60,12 +60,15 @@ async def test_context_mismatch_rejected_and_file_unchanged(ws):
 
 async def test_multi_file_patch(ws):
     (ws / "other.py").write_text("x = 1\n", encoding="utf-8")
-    diff = MODIFY + """--- a/other.py
+    diff = (
+        MODIFY
+        + """--- a/other.py
 +++ b/other.py
 @@ -1 +1 @@
 -x = 1
 +x = 2
 """
+    )
     obs = await apply(ws, diff)
     assert obs.ok, obs.error
     assert "x = 2" in (ws / "other.py").read_text(encoding="utf-8")

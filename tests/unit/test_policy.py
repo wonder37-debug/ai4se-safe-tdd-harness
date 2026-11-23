@@ -101,7 +101,7 @@ def test_subshell_cmd_c():
 
 
 def test_nested_subshell_depth():
-    v = assess(shell('bash -c "bash -c \'rm -rf /\'"'))
+    v = assess(shell("bash -c \"bash -c 'rm -rf /'\""))
     assert v.severity == "high"
 
 

@@ -85,7 +85,6 @@ class AgentLoop:
     async def run(self) -> LoopResult:
         deps = self.deps
         start = deps.monotonic()
-        result = LoopResult(halt_reason=HaltReason.CAP)
 
         if deps.memory is not None:
             mem = await deps.memory.system_prompt()
@@ -115,9 +114,13 @@ class AgentLoop:
             if self._iter >= deps.budgets.max_llm_calls:
                 return self._halt(HaltReason.CAP, snapshot(HaltReason.CAP))
             if deps.monotonic() - start > deps.budgets.max_wall_seconds:
-                return self._halt(HaltReason.BUDGET_EXCEEDED, snapshot(HaltReason.BUDGET_EXCEEDED), budget="wall_seconds")
+                return self._halt(
+                    HaltReason.BUDGET_EXCEEDED, snapshot(HaltReason.BUDGET_EXCEEDED), budget="wall_seconds"
+                )
             if deps.budgets.max_tokens and usage.total_tokens >= deps.budgets.max_tokens:
-                return self._halt(HaltReason.BUDGET_EXCEEDED, snapshot(HaltReason.BUDGET_EXCEEDED), budget="tokens")
+                return self._halt(
+                    HaltReason.BUDGET_EXCEEDED, snapshot(HaltReason.BUDGET_EXCEEDED), budget="tokens"
+                )
 
             self._iter += 1
             llm_calls += 1
@@ -125,7 +128,9 @@ class AgentLoop:
                 resp = await deps.llm.complete(self.messages)
             except Exception as e:
                 return self._halt(
-                    HaltReason.PROVIDER_ERROR, snapshot(HaltReason.PROVIDER_ERROR), error=f"provider_error: {e}"
+                    HaltReason.PROVIDER_ERROR,
+                    snapshot(HaltReason.PROVIDER_ERROR),
+                    error=f"provider_error: {e}",
                 )
             usage = TokenUsage(
                 prompt_tokens=usage.prompt_tokens + resp.usage.prompt_tokens,
@@ -142,7 +147,10 @@ class AgentLoop:
                 acts = parse_actions(resp.text)
             if not acts:
                 self.messages.append(
-                    Message(role="user", content="Observation: no action block found; emit a fenced ```action {...}``` block")
+                    Message(
+                        role="user",
+                        content="Observation: no action block found; emit a fenced ```action {...}``` block",
+                    )
                 )
                 continue
             if len(acts) > 1:
@@ -173,7 +181,10 @@ class AgentLoop:
                         )
                     self._session.last_denied = True
                     self.messages.append(
-                        Message(role="user", content=f"Observation: DENIED: {dec.reason} (reasons: {'; '.join(verdict.reasons)})")
+                        Message(
+                            role="user",
+                            content=f"Observation: DENIED: {dec.reason} (reasons: {'; '.join(verdict.reasons)})",
+                        )
                     )
                     continue
             elif verdict.severity == "low":
@@ -183,7 +194,9 @@ class AgentLoop:
 
             self._session.last_denied = False
             if steps >= deps.budgets.max_steps:
-                return self._halt(HaltReason.BUDGET_EXCEEDED, snapshot(HaltReason.BUDGET_EXCEEDED), budget="steps")
+                return self._halt(
+                    HaltReason.BUDGET_EXCEEDED, snapshot(HaltReason.BUDGET_EXCEEDED), budget="steps"
+                )
             obs = await deps.registry.dispatch(action, ctx)
             steps += 1
 

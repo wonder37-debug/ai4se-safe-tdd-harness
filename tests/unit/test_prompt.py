@@ -6,7 +6,16 @@ from safefix.agent.prompt import build_system_prompt
 def test_prompt_contains_task_and_tools():
     p = build_system_prompt("fix the off-by-one in paginate()")
     assert "fix the off-by-one in paginate()" in p
-    for tool in ("list_files", "search_code", "read_file", "apply_patch", "run_tests", "git_status", "git_diff", "finish"):
+    for tool in (
+        "list_files",
+        "search_code",
+        "read_file",
+        "apply_patch",
+        "run_tests",
+        "git_status",
+        "git_diff",
+        "finish",
+    ):
         assert tool in p
 
 

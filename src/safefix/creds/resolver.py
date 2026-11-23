@@ -45,7 +45,9 @@ async def resolve_credentials(
         try:
             resolved = await creds.resolve(master_password)
             if resolved.key and base_url:
-                return ResolvedCreds(base_url=base_url, key=resolved.key, model=model, source="encrypted-file")
+                return ResolvedCreds(
+                    base_url=base_url, key=resolved.key, model=model, source="encrypted-file"
+                )
         except CredentialError:
             pass  # wrong password / no file -> fall through to env fallback
 
