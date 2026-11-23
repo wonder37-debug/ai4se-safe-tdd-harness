@@ -90,3 +90,17 @@ $env:SAFEFIX_REAL_LLM="1"; uv run pytest tests/integration/test_real_llm.py
 - 成本未折算美元（无内置定价表）；token 已记录。
 - WSL Ubuntu 的 Docker Desktop 集成未启用（不改动用户设置）；Linux 容器沙箱经
   Windows Docker Desktop 实测，Linux 宿主路径由 CI ubuntu-latest 覆盖。
+
+## 7. PR Review 修复轮（12 threads，基准 6d8b0c6）
+
+逐条修复映射与回归测试见 `docs/verification/review-fixes.md`。修复后实测：
+
+- 单元 **239 passed / 2 skipped**（Windows symlink 权限），覆盖率 88%；ruff 全绿。
+- Docker 集成 **8 passed**（新增容器无泄漏断言）。
+- **真实 LLM 验收（强制 verified）：2 passed**（paginate + held-out querystring，98.5s）；
+  分层：L1 连通/原生工具/usage（real_smoke.py）→ L2 真实工具调用轨迹（events/usage 断言）
+  → L3 独立验证 verified（失败保留完整证据，不弱化断言）。
+- **修正方法学后的真实 A/B/C（v2）**：A 2/5 · B 5/5 · C 5/5，92,959 tokens；
+  A 组预置源码+复现证据（信息对等）。v1（A 0/5）因 A 组结构性无法生成补丁，
+  **保留为历史存档，不作为反馈机制有效性的因果证据**。
+- `uv build` wheel+sdist 成功；净室安装（仓库外 venv + wheel）demo verified / mock eval 5/5。

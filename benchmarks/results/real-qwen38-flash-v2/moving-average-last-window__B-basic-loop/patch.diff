@@ -1,0 +1,13 @@
+diff --git a/statskit/average.py b/statskit/average.py
+index 43f4085..cdfc0cd 100644
+--- a/statskit/average.py
++++ b/statskit/average.py
+@@ -5,6 +5,6 @@ def moving_average(values, window):
+     if window <= 0:
+         raise ValueError("window must be positive")
+     out = []
+-    for i in range(len(values) - window):
++    for i in range(len(values) - window + 1):
+         out.append(sum(values[i : i + window]) / window)
+     return out
+\ No newline at end of file

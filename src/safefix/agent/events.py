@@ -29,18 +29,24 @@ class EventLog:
         self.events: list[ExecutionEvent] = []
 
     def emit(self, event: ExecutionEvent) -> None:
-        self.events.append(event.model_copy(update={"seq": len(self.events) + 1, "ts": time.time()}))
+        if event.seq == 0:
+            event = event.model_copy(update={"seq": len(self.events) + 1, "ts": time.time()})
+        self.events.append(event)
 
 
 class JsonlSink:
-    """Append-only JSONL audit trail (one event per line)."""
+    """JSONL audit trail (one event per line). ``append=False`` starts a fresh
+    file so reusing a report directory never mixes runs (review 4662795533)."""
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, append: bool = True):
         self._path = Path(path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
+        if not append:
+            self._path.write_text("", encoding="utf-8")  # truncate once, then append
+        self._mode = "a"
 
     def emit(self, event: ExecutionEvent) -> None:
-        with self._path.open("a", encoding="utf-8") as f:
+        with self._path.open(self._mode, encoding="utf-8") as f:
             f.write(event.model_dump_json() + "\n")
 
 

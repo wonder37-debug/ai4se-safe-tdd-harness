@@ -10,12 +10,26 @@ Untrusted command execution still goes through the Docker executor.
 
 from __future__ import annotations
 
+import os
 import shutil
 import stat
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from safefix.tools.git import GIT_HARDEN_ARGS, GIT_HARDEN_ENV
+
+# Tool-generated artifacts that must never enter the candidate patch.
+_EXCLUDES = [
+    ".safefix-memory/",
+    ".deps/",
+    "__pycache__/",
+    "*.pyc",
+    "_eval_verify/",
+    ".pytest_cache/",
+    ".ruff_cache/",
+]
 
 
 class WorkspaceError(Exception):
@@ -30,10 +44,30 @@ class Workspace:
 
 
 def _git(cwd: Path | None, *args: str) -> str:
-    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=300)
+    proc = subprocess.run(
+        ["git", *GIT_HARDEN_ARGS, *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        env=GIT_HARDEN_ENV,
+    )
     if proc.returncode != 0:
         raise WorkspaceError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout.strip()
+
+
+def _ensure_container_writable(dest: Path) -> None:
+    """Root host (native Linux): the clone is root-owned 0755/0644, so a non-root
+    container user cannot write it. Transfer ownership to the sandbox uid while
+    KEEPING the container non-root (review 4663355656). No-op elsewhere."""
+    if not hasattr(os, "geteuid") or os.geteuid() != 0:
+        return
+    for path in [dest, *dest.rglob("*")]:
+        try:
+            os.chown(path, 1000, 1000)
+        except OSError:
+            pass
 
 
 def prepare_workspace(repo: str, *, dest: Path | None = None) -> Workspace:
@@ -55,6 +89,13 @@ def prepare_workspace(repo: str, *, dest: Path | None = None) -> Workspace:
         source = repo
 
     base_commit = _git(dest, "rev-parse", "HEAD")
+    # keep tool artifacts out of `git ls-files --others --exclude-standard`
+    info_dir = dest / ".git" / "info"
+    info_dir.mkdir(parents=True, exist_ok=True)
+    exclude = info_dir / "exclude"
+    existing = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+    exclude.write_text(existing + "\n" + "\n".join(_EXCLUDES) + "\n", encoding="utf-8")
+    _ensure_container_writable(dest)
     return Workspace(path=dest, base_commit=base_commit, source=source)
 
 

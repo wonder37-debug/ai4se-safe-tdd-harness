@@ -1,0 +1,49 @@
+{
+  "status": "verified",
+  "halt_reason": "finish",
+  "iterations": 7,
+  "llm_calls": 7,
+  "steps": 6,
+  "usage": {
+    "prompt_tokens": 6196,
+    "completion_tokens": 454
+  },
+  "duration_s": 12.796000000002095,
+  "base_commit": "cf01d538979619d69566b995d4805281be960ddb",
+  "patch": "diff --git a/searchkit/bisect.py b/searchkit/bisect.py\nindex 5fd8570..7cd86f3 100644\n--- a/searchkit/bisect.py\n+++ b/searchkit/bisect.py\n@@ -9,4 +9,4 @@ def find_first(sorted_items, target):\n             lo = mid + 1\n         else:\n             hi = mid\n-    return lo if lo < len(sorted_items) else -1\n\\ No newline at end of file\n+    return lo if lo < len(sorted_items) and sorted_items[lo] == target else -1\n\\ No newline at end of file\n",
+  "repro_before": {
+    "exit_code": 1,
+    "passed": false,
+    "tail": ".F                                                                       [100%]\n=================================== FAILURES ===================================\n________________________ test_absent_returns_minus_one _________________________\n\n    def test_absent_returns_minus_one():\n>       assert find_first([1, 3, 5], 4) == -1\nE       assert 2 == -1\nE        +  where 2 = find_first([1, 3, 5], 4)\n\ntests/test_bisect.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_bisect.py::test_absent_returns_minus_one - assert 2 == -1\n1 failed, 1 passed in 0.16s\n"
+  },
+  "verification": {
+    "checks": [
+      {
+        "name": "patch_nonempty",
+        "passed": true,
+        "detail": "full candidate change vs HEAD (incl. new files)"
+      },
+      {
+        "name": "tests_untouched",
+        "passed": true,
+        "detail": "no test files/config modified, deleted or added"
+      },
+      {
+        "name": "repro_passes",
+        "passed": true,
+        "detail": "..                                                                       [100%]\n2 passed in 0.06s\n"
+      },
+      {
+        "name": "regression_passes",
+        "passed": true,
+        "detail": "..                                                                       [100%]\n2 passed in 0.06s\n"
+      },
+      {
+        "name": "eval_passes",
+        "passed": true,
+        "detail": ".......                                                                  [100%]\n7 passed in 0.08s\n"
+      }
+    ]
+  },
+  "failure_analysis": null
+}

@@ -59,6 +59,7 @@ class LoopDeps:
     executor: ExecutionBackend | None = None
     cancel_event: asyncio.Event | None = None
     monotonic: Callable[[], float] = time.monotonic
+    initial_context: str | None = None
 
 
 class AgentLoop:
@@ -69,13 +70,19 @@ class AgentLoop:
             Message(role="system", content=deps.system_prompt),
             Message(role="user", content="complete the task using tools"),
         ]
+        if deps.initial_context:
+            self.messages[1].content += "\n\n" + deps.initial_context
         self._session = SessionState()
         self._sink = deps.sink or NoopSink()
         self._policy = deps.policy or default_policy
         self._iter = 0
+        self._seq = 0
 
     def _emit(self, type_: str, payload: dict) -> None:
-        self._sink.emit(ExecutionEvent(seq=0, type=type_, payload=payload, iter=self._iter))
+        self._seq += 1
+        self._sink.emit(
+            ExecutionEvent(seq=self._seq, type=type_, payload=payload, iter=self._iter, ts=time.time())
+        )
 
     def _halt(self, reason: HaltReason, result: LoopResult, **payload) -> LoopResult:
         self.state = TaskState.HALTED
@@ -124,13 +131,25 @@ class AgentLoop:
 
             self._iter += 1
             llm_calls += 1
+            # remaining wall-clock budget bounds IN-FLIGHT calls (review 4663423547)
+            remaining = deps.budgets.max_wall_seconds - (deps.monotonic() - start)
             try:
-                resp = await deps.llm.complete(self.messages)
+                resp = await asyncio.wait_for(deps.llm.complete(self.messages), timeout=max(remaining, 0.001))
+            except TimeoutError:
+                return self._halt(
+                    HaltReason.BUDGET_EXCEEDED, snapshot(HaltReason.BUDGET_EXCEEDED), budget="wall_seconds"
+                )
             except Exception as e:
                 return self._halt(
                     HaltReason.PROVIDER_ERROR,
                     snapshot(HaltReason.PROVIDER_ERROR),
                     error=f"provider_error: {e}",
+                )
+            # re-check the deadline BEFORE honoring the response (a late finish
+            # must not be recorded as normal completion)
+            if deps.monotonic() - start > deps.budgets.max_wall_seconds:
+                return self._halt(
+                    HaltReason.BUDGET_EXCEEDED, snapshot(HaltReason.BUDGET_EXCEEDED), budget="wall_seconds"
                 )
             usage = TokenUsage(
                 prompt_tokens=usage.prompt_tokens + resp.usage.prompt_tokens,
@@ -194,7 +213,15 @@ class AgentLoop:
                 return self._halt(
                     HaltReason.BUDGET_EXCEEDED, snapshot(HaltReason.BUDGET_EXCEEDED), budget="steps"
                 )
-            obs = await deps.registry.dispatch(action, ctx)
+            try:
+                obs = await asyncio.wait_for(
+                    deps.registry.dispatch(action, ctx),
+                    timeout=max(deps.budgets.max_wall_seconds - (deps.monotonic() - start), 0.001),
+                )
+            except TimeoutError:
+                return self._halt(
+                    HaltReason.BUDGET_EXCEEDED, snapshot(HaltReason.BUDGET_EXCEEDED), budget="wall_seconds"
+                )
             steps += 1
 
             if action.tool == "run_tests" and not obs.ok:

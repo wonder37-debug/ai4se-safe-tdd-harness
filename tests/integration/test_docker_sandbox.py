@@ -71,6 +71,14 @@ async def test_host_env_not_leaked(executor, tmp_path, monkeypatch):
 async def test_timeout_kills(executor, tmp_path):
     result = await executor.run("sleep 30", cwd=tmp_path, timeout=2)
     assert result.timed_out
+    # the CONTAINER (not just the docker client) must be gone afterwards
+    ps = subprocess.run(
+        ["docker", "ps", "-q", "--filter", "ancestor=safefix-sandbox:latest"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert ps.stdout.strip() == "", f"leaked running containers: {ps.stdout}"
 
 
 async def test_unavailable_daemon_raises_explicit_error(tmp_path, monkeypatch):

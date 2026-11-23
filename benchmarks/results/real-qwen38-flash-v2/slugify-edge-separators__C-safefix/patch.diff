@@ -1,0 +1,12 @@
+diff --git a/textutil/slugify.py b/textutil/slugify.py
+index ffe78cc..c63d97c 100644
+--- a/textutil/slugify.py
++++ b/textutil/slugify.py
+@@ -6,4 +6,4 @@ import re
+ def slugify(text):
+     text = text.lower().strip()
+     text = re.sub(r"[^a-z0-9]+", "-", text)
+-    return text
+\ No newline at end of file
++    return text.strip("-")
+\ No newline at end of file

@@ -8,6 +8,8 @@ All outputs are truncated to keep the LLM context bounded.
 
 from __future__ import annotations
 
+import asyncio
+import multiprocessing as mp
 import re
 from pathlib import Path
 
@@ -27,12 +29,24 @@ def _fence(workspace: Path, p: str) -> Path:
     full = Path(root, p).resolve()
     if not full.is_relative_to(root):
         raise ValueError(f"path escapes workspace: {p!r}")
+    if ".git" in full.relative_to(root).parts:
+        # Git metadata can carry executable config (core.fsmonitor, hooks,
+        # diff drivers); host git calls must never see model-written values.
+        raise ValueError(f"path touches .git metadata: {p!r}")
     return full
 
 
 def _walk(base: Path):
+    root = base.resolve()
     for f in sorted(base.rglob("*")):
         if any(part in _SKIP_DIRS for part in f.relative_to(base).parts):
+            continue
+        try:
+            # per-entry symlink fence: file symlinks pointing outside the
+            # workspace must not be stat'd/read (host data leak via search).
+            if not f.resolve().is_relative_to(root):
+                continue
+        except OSError:
             continue
         yield f
 
@@ -91,6 +105,68 @@ class SearchCodeArgs(BaseModel):
     pattern: str = Field(description="Python regular expression to search for")
     path: str = Field(default=".", description="Directory to search, relative to workspace")
     max_results: int = Field(default=50, ge=1, le=500)
+    timeout: float = Field(default=10.0, gt=0, le=60, description="Hard search deadline in seconds")
+
+
+def _search_worker(base_str: str, pattern: str, max_results: int, conn) -> None:
+    """Runs in a KILLABLE child process: catastrophic regex backtracking cannot
+    hang the host event loop; the parent terminates it on deadline."""
+    try:
+        base = Path(base_str)
+        root = base.resolve()
+        rx = re.compile(pattern)
+        hits: list[str] = []
+        for f in _walk(base):
+            try:
+                resolved = f.resolve()
+                if not resolved.is_relative_to(root):
+                    continue
+                if not resolved.is_file() or resolved.stat().st_size > _FILE_SIZE_CAP:
+                    continue
+                lines = resolved.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError):
+                continue
+            rel = f.relative_to(base).as_posix()
+            for i, line in enumerate(lines, 1):
+                if rx.search(line):
+                    hits.append(f"{rel}:{i}: {line.strip()}")
+                    if len(hits) >= max_results:
+                        conn.send(("ok", "\n".join(hits)))
+                        return
+        conn.send(("ok", "\n".join(hits) if hits else "no matches"))
+    except Exception as e:  # noqa: BLE001 - report any worker failure to parent
+        try:
+            conn.send(("err", str(e)))
+        except Exception:
+            pass
+    finally:
+        conn.close()
+
+
+def _run_search_process(base_str: str, pattern: str, max_results: int, timeout: float) -> Observation:
+    ctx = mp.get_context("spawn")  # fork is unsafe inside a worker thread
+    parent_conn, child_conn = ctx.Pipe(duplex=False)
+    proc = ctx.Process(target=_search_worker, args=(base_str, pattern, max_results, child_conn))
+    proc.start()
+    child_conn.close()
+    try:
+        if parent_conn.poll(timeout):
+            status, payload = parent_conn.recv()
+            if status == "ok":
+                return Observation(ok=True, content=payload)
+            return Observation(ok=False, error=payload)
+        return Observation(ok=False, error=f"search timed out after {timeout}s (process terminated)")
+    except (EOFError, OSError) as e:
+        return Observation(ok=False, error=f"search worker failed: {e}")
+    finally:
+        parent_conn.close()
+        proc.join(1)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(2)
+            if proc.is_alive():
+                proc.kill()
+                proc.join()
 
 
 class SearchCodeTool:
@@ -100,25 +176,14 @@ class SearchCodeTool:
 
     async def execute(self, args: SearchCodeArgs, ctx: ToolContext) -> Observation:
         try:
-            rx = re.compile(args.pattern)
+            re.compile(args.pattern)
         except re.error as e:
             return Observation(ok=False, error=f"invalid regex: {e}")
         try:
             base = _fence(ctx.workspace, args.path)
         except ValueError as e:
             return Observation(ok=False, error=str(e))
-        hits: list[str] = []
-        for f in _walk(base):
-            if not f.is_file() or f.stat().st_size > _FILE_SIZE_CAP:
-                continue
-            try:
-                lines = f.read_text(encoding="utf-8").splitlines()
-            except (OSError, UnicodeDecodeError):
-                continue
-            rel = f.relative_to(base).as_posix()
-            for i, line in enumerate(lines, 1):
-                if rx.search(line):
-                    hits.append(f"{rel}:{i}: {line.strip()}")
-                    if len(hits) >= args.max_results:
-                        return Observation(ok=True, content="\n".join(hits))
-        return Observation(ok=True, content="\n".join(hits) if hits else "no matches")
+        # off the event loop: the child process is killable on deadline
+        return await asyncio.to_thread(
+            _run_search_process, str(base), args.pattern, args.max_results, args.timeout
+        )

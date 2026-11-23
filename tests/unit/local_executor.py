@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from safefix.runtime.executor import ExecResult
+from safefix.runtime.output import bounded_communicate
 
 
 class TrustedLocalExecutor:
@@ -28,15 +29,14 @@ class TrustedLocalExecutor:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        try:
-            out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-            return ExecResult(
-                stdout=out.decode("utf-8", "replace"),
-                stderr=err.decode("utf-8", "replace"),
-                exit_code=proc.returncode or 0,
-                duration_s=time.monotonic() - start,
-            )
-        except TimeoutError:
+        out, err, timed_out = await bounded_communicate(proc, 1_000_000, timeout)
+        if timed_out:
             proc.kill()
             await proc.wait()
             return ExecResult(exit_code=-1, timed_out=True)
+        return ExecResult(
+            stdout=out,
+            stderr=err,
+            exit_code=proc.returncode or 0,
+            duration_s=time.monotonic() - start,
+        )

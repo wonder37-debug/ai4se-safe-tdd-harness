@@ -1,0 +1,49 @@
+{
+  "status": "failed",
+  "halt_reason": "cap",
+  "iterations": 1,
+  "llm_calls": 1,
+  "steps": 0,
+  "usage": {
+    "prompt_tokens": 733,
+    "completion_tokens": 1597
+  },
+  "duration_s": 25.53200000000652,
+  "base_commit": "ad29305335f46c6e822b2d1359045fe46d3da8a3",
+  "patch": "",
+  "repro_before": {
+    "exit_code": 1,
+    "passed": false,
+    "tail": ".F                                                                       [100%]\n=================================== FAILURES ===================================\n___________________________ test_padded_punctuation ____________________________\n\n    def test_padded_punctuation():\n>       assert slugify(\"  Hello, World!  \") == \"hello-world\"\nE       AssertionError: assert 'hello-world-' == 'hello-world'\nE         \nE         - hello-world\nE         + hello-world-\nE         ?            +\n\ntests/test_slugify.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_slugify.py::test_padded_punctuation - AssertionError: asser...\n1 failed, 1 passed in 0.15s\n"
+  },
+  "verification": {
+    "checks": [
+      {
+        "name": "patch_nonempty",
+        "passed": false,
+        "detail": "full candidate change vs HEAD (incl. new files)"
+      },
+      {
+        "name": "tests_untouched",
+        "passed": true,
+        "detail": "no test files/config modified, deleted or added"
+      },
+      {
+        "name": "repro_passes",
+        "passed": false,
+        "detail": " \") == \"hello-world\"\nE       AssertionError: assert 'hello-world-' == 'hello-world'\nE         \nE         - hello-world\nE         + hello-world-\nE         ?            +\n\ntests/test_slugify.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_slugify.py::test_padded_punctuation - AssertionError: asser...\n1 failed, 1 passed in 0.10s\n"
+      },
+      {
+        "name": "regression_passes",
+        "passed": false,
+        "detail": " \") == \"hello-world\"\nE       AssertionError: assert 'hello-world-' == 'hello-world'\nE         \nE         - hello-world\nE         + hello-world-\nE         ?            +\n\ntests/test_slugify.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_slugify.py::test_padded_punctuation - AssertionError: asser...\n1 failed, 1 passed in 0.09s\n"
+      },
+      {
+        "name": "eval_passes",
+        "passed": false,
+        "detail": "_verify/test_eval_slugify.py:15: AssertionError\n=========================== short test summary info ============================\nFAILED _eval_verify/test_eval_slugify.py::test_leading_symbols - AssertionErr...\nFAILED _eval_verify/test_eval_slugify.py::test_trailing_symbols - AssertionEr...\nFAILED _eval_verify/test_eval_slugify.py::test_only_symbols_is_empty - Assert...\n3 failed, 3 passed in 0.12s\n"
+      }
+    ]
+  },
+  "failure_analysis": "halt=cap; empty patch; patch_nonempty failed: full candidate change vs HEAD (incl. new files); repro_passes failed:  \") == \"hello-world\"\nE       AssertionError: assert 'hello-world-' == 'hello-world'\nE         \nE         - hello-world\nE         + hello-world-\nE         ?            +\n\ntests/test_slugify.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_slugify.py::test_padded_punctuation - AssertionError: asser...\n1 failed, 1 passed in 0.10s\n; regression_passes failed:  \") == \"hello-world\"\nE       AssertionError: assert 'hello-world-' == 'hello-world'\nE         \nE         - hello-world\nE         + hello-world-\nE         ?            +\n\ntests/test_slugify.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_slugify.py::test_padded_punctuation - AssertionError: asser...\n1 failed, 1 passed in 0.09s\n; eval_passes failed: _verify/test_eval_slugify.py:15: AssertionError\n=========================== short test summary info ============================\nFAILED _eval_verify/test_eval_slugify.py::test_leading_symbols - AssertionErr...\nFAILED _eval_verify/test_eval_slugify.py::test_trailing_symbols - AssertionEr...\nFAILED _eval_verify/test_eval_slugify.py::test_only_symbols_is_empty - Assert...\n3 failed, 3 passed in 0.12s\n"
+}

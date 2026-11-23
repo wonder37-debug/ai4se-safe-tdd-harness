@@ -1,0 +1,49 @@
+{
+  "status": "failed",
+  "halt_reason": "cap",
+  "iterations": 1,
+  "llm_calls": 1,
+  "steps": 1,
+  "usage": {
+    "prompt_tokens": 884,
+    "completion_tokens": 213
+  },
+  "duration_s": 6.35899999999674,
+  "base_commit": "990e344361478d79b34fb5b54c9d07a0ae3f8c93",
+  "patch": "",
+  "repro_before": {
+    "exit_code": 1,
+    "passed": false,
+    "tail": "rt paginate([1, 2, 3, 4, 5], 1, 2) == [1, 2]\nE       assert [3, 4] == [1, 2]\nE         \nE         At index 0 diff: 3 != 1\nE         Use -v to get more diff\n\ntests/test_paginate.py:5: AssertionError\n_______________________________ test_second_page _______________________________\n\n    def test_second_page():\n>       assert paginate([1, 2, 3, 4, 5], 2, 2) == [3, 4]\nE       assert [5] == [3, 4]\nE         \nE         At index 0 diff: 5 != 3\nE         Right contains one more item: 4\nE         Use -v to get more diff\n\ntests/test_paginate.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_paginate.py::test_first_page - assert [3, 4] == [1, 2]\nFAILED tests/test_paginate.py::test_second_page - assert [5] == [3, 4]\n2 failed in 0.20s\n"
+  },
+  "verification": {
+    "checks": [
+      {
+        "name": "patch_nonempty",
+        "passed": false,
+        "detail": "full candidate change vs HEAD (incl. new files)"
+      },
+      {
+        "name": "tests_untouched",
+        "passed": true,
+        "detail": "no test files/config modified, deleted or added"
+      },
+      {
+        "name": "repro_passes",
+        "passed": false,
+        "detail": "    \nE         At index 0 diff: 5 != 3\nE         Right contains one more item: 4\nE         Use -v to get more diff\n\ntests/test_paginate.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_paginate.py::test_first_page - assert [3, 4] == [1, 2]\nFAILED tests/test_paginate.py::test_second_page - assert [5] == [3, 4]\n2 failed in 0.08s\n"
+      },
+      {
+        "name": "regression_passes",
+        "passed": false,
+        "detail": "    \nE         At index 0 diff: 5 != 3\nE         Right contains one more item: 4\nE         Use -v to get more diff\n\ntests/test_paginate.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_paginate.py::test_first_page - assert [3, 4] == [1, 2]\nFAILED tests/test_paginate.py::test_second_page - assert [5] == [3, 4]\n2 failed in 0.11s\n"
+      },
+      {
+        "name": "eval_passes",
+        "passed": false,
+        "detail": "verify/test_eval_paginate.py:19: AssertionError\n=========================== short test summary info ============================\nFAILED _eval_verify/test_eval_paginate.py::test_last_partial_page - assert []...\nFAILED _eval_verify/test_eval_paginate.py::test_size_one - AssertionError: as...\nFAILED _eval_verify/test_eval_paginate.py::test_whole_list_single_page - asse...\n3 failed, 2 passed in 0.14s\n"
+      }
+    ]
+  },
+  "failure_analysis": "halt=cap; empty patch; patch_nonempty failed: full candidate change vs HEAD (incl. new files); repro_passes failed:     \nE         At index 0 diff: 5 != 3\nE         Right contains one more item: 4\nE         Use -v to get more diff\n\ntests/test_paginate.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_paginate.py::test_first_page - assert [3, 4] == [1, 2]\nFAILED tests/test_paginate.py::test_second_page - assert [5] == [3, 4]\n2 failed in 0.08s\n; regression_passes failed:     \nE         At index 0 diff: 5 != 3\nE         Right contains one more item: 4\nE         Use -v to get more diff\n\ntests/test_paginate.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_paginate.py::test_first_page - assert [3, 4] == [1, 2]\nFAILED tests/test_paginate.py::test_second_page - assert [5] == [3, 4]\n2 failed in 0.11s\n; eval_passes failed: verify/test_eval_paginate.py:19: AssertionError\n=========================== short test summary info ============================\nFAILED _eval_verify/test_eval_paginate.py::test_last_partial_page - assert []...\nFAILED _eval_verify/test_eval_paginate.py::test_size_one - AssertionError: as...\nFAILED _eval_verify/test_eval_paginate.py::test_whole_list_single_page - asse...\n3 failed, 2 passed in 0.14s\n"
+}

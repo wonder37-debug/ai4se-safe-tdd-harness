@@ -1,0 +1,49 @@
+{
+  "status": "verified",
+  "halt_reason": "finish",
+  "iterations": 9,
+  "llm_calls": 9,
+  "steps": 7,
+  "usage": {
+    "prompt_tokens": 9055,
+    "completion_tokens": 895
+  },
+  "duration_s": 24.719000000011874,
+  "base_commit": "e84ddb75f1de5f5a9979439c6bfd84da0372c9d8",
+  "patch": "diff --git a/numtools/clamp.py b/numtools/clamp.py\nindex 7bcc5ce..aef7678 100644\n--- a/numtools/clamp.py\n+++ b/numtools/clamp.py\n@@ -2,8 +2,10 @@\n \n \n def clamp(value, lo, hi):\n+    if lo > hi:\n+        raise ValueError(\"lo must be <= hi\")\n     if value < lo:\n-        return hi\n+        return lo\n     if value > hi:\n         return hi\n     return value\n\\ No newline at end of file\n",
+  "repro_before": {
+    "exit_code": 1,
+    "passed": false,
+    "tail": "==\n_________________________ test_below_range_returns_lo __________________________\n\n    def test_below_range_returns_lo():\n>       assert clamp(5, 10, 20) == 10\nE       assert 20 == 10\nE        +  where 20 = clamp(5, 10, 20)\n\ntests/test_clamp.py:7: AssertionError\n__________________________ test_invalid_range_raises ___________________________\n\n    def test_invalid_range_raises():\n>       with pytest.raises(ValueError):\n             ^^^^^^^^^^^^^^^^^^^^^^^^^\nE       Failed: DID NOT RAISE ValueError\n\ntests/test_clamp.py:15: Failed\n=========================== short test summary info ============================\nFAILED tests/test_clamp.py::test_below_range_returns_lo - assert 20 == 10\nFAILED tests/test_clamp.py::test_invalid_range_raises - Failed: DID NOT RAISE...\n2 failed, 1 passed in 0.22s\n"
+  },
+  "verification": {
+    "checks": [
+      {
+        "name": "patch_nonempty",
+        "passed": true,
+        "detail": "full candidate change vs HEAD (incl. new files)"
+      },
+      {
+        "name": "tests_untouched",
+        "passed": true,
+        "detail": "no test files/config modified, deleted or added"
+      },
+      {
+        "name": "repro_passes",
+        "passed": true,
+        "detail": "...                                                                      [100%]\n3 passed in 0.07s\n"
+      },
+      {
+        "name": "regression_passes",
+        "passed": true,
+        "detail": "...                                                                      [100%]\n3 passed in 0.09s\n"
+      },
+      {
+        "name": "eval_passes",
+        "passed": true,
+        "detail": "......                                                                   [100%]\n6 passed in 0.08s\n"
+      }
+    ]
+  },
+  "failure_analysis": null
+}

@@ -40,12 +40,12 @@
   A/B/C 基线（单发 / 基础循环 / 完整 SafeFix），JSON + CSV + Markdown 报告。
 - **CLI（Typer + Rich）**：`demo / fix / eval / report / creds / ui`；
   可选 Streamlit 运行查看器（仅 localhost）。
-- **211 个离线单元测试（Windows，1 个因 symlink 权限 skip；WSL2 Linux 下 212 个全过）
+- **239 个离线单元测试（2 个因 Windows symlink 权限 skip，Linux CI 真实执行）
   + 8 个真实 Docker 沙箱集成测试**，核心机制全部可在
   无网络、无真实 LLM 条件下用 ScriptedMock 验证。
-- **真实模型验证已完成**（qwen3.8-flash，OpenAI 兼容端点）：3 次独立验证的
-  真实修复 verified（含一个不在脚本答案中的 held-out 缺陷）；真实 A/B/C 基准
-  A 0/5 · B 5/5 · C 5/5。详见 [docs/verification/real-llm-validation.md](docs/verification/real-llm-validation.md)。
+- **真实模型验证已完成**（qwen3.8-flash，OpenAI 兼容端点）：验收测试强制
+  verified（paginate + held-out querystring，2 passed）；修正方法学后的真实 A/B/C
+  基准 **A 2/5 · B 5/5 · C 5/5**。详见 [docs/verification/](docs/verification/real-llm-validation.md)。
 
 ## 架构
 

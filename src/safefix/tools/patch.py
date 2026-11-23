@@ -89,11 +89,15 @@ def _parse(diff: str) -> list[_FilePatch]:
     return files
 
 
-def _find(lines: list[str], needle: list[str], hint: int) -> int | None:
+def _find(lines: list[str], needle: list[str], hint: int, lower_bound: int = 0) -> int | None:
+    """Locate hunk context monotonically: never search before ``lower_bound``
+    (the end of the previous applied hunk), so repeated blocks cannot attract
+    a later hunk backwards into an earlier occurrence."""
     n = len(needle)
-    if 0 <= hint <= len(lines) - n and lines[hint : hint + n] == needle:
+    start = max(lower_bound, 0)
+    if start <= hint <= len(lines) - n and lines[hint : hint + n] == needle:
         return hint
-    for idx in range(len(lines) - n + 1):
+    for idx in range(start, len(lines) - n + 1):
         if lines[idx : idx + n] == needle:
             return idx
     return None
@@ -121,15 +125,21 @@ def _render(fp: _FilePatch, workspace: Path) -> tuple[Path, str | None]:
     text = target.read_text(encoding="utf-8")
     trailing_nl = text.endswith("\n")
     lines = text.splitlines()
+    delta = 0  # cumulative line-count change from previously applied hunks
+    search_from = 0  # monotonic lower bound for context search
     for h in fp.hunks:
         if not h.old_lines:
-            idx = max(0, min(h.old_start, len(lines)))
+            idx = max(search_from, min(h.old_start + delta, len(lines)))
             lines[idx:idx] = h.new_lines
+            delta += len(h.new_lines)
+            search_from = idx + len(h.new_lines)
             continue
-        idx = _find(lines, h.old_lines, h.old_start - 1)
+        idx = _find(lines, h.old_lines, h.old_start - 1 + delta, lower_bound=search_from)
         if idx is None:
             raise PatchError(f"hunk context mismatch in {fp.dst}")
         lines[idx : idx + len(h.old_lines)] = h.new_lines
+        delta += len(h.new_lines) - len(h.old_lines)
+        search_from = idx + len(h.new_lines)
     return target, "\n".join(lines) + ("\n" if trailing_nl else "")
 
 

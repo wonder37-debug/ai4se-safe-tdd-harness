@@ -117,6 +117,9 @@ async def run_suite(
                         setup_commands=fx.meta.get("setup", []),
                         budgets=Budgets(**budget_data),
                         tool_names=_VARIANT_TOOLS[variant],
+                        # fair single-shot: source + repro evidence preseeded so the
+                        # one generation can actually emit a patch (review 4661696758)
+                        preseed_context=variant == Variant.A,
                     ),
                     provider=provider_for(spec, variant),
                     executor=executor,

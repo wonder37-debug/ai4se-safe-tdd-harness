@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import shutil
+import tempfile
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -24,6 +26,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from safefix.runtime.executor import ExecResult, SandboxUnavailableError
+from safefix.runtime.output import bounded_communicate
 
 _OUTPUT_CAP = 1_000_000
 
@@ -43,10 +46,6 @@ class SandboxLimits(BaseModel):
 SpawnFn = Callable[[list[str], float], Awaitable[ExecResult]]
 
 
-def _truncate(s: str) -> str:
-    return s[:_OUTPUT_CAP] + "\n...[output truncated]" if len(s) > _OUTPUT_CAP else s
-
-
 async def _default_spawn(argv: list[str], timeout: float) -> ExecResult:
     start = time.monotonic()
     proc = await asyncio.create_subprocess_exec(
@@ -54,18 +53,35 @@ async def _default_spawn(argv: list[str], timeout: float) -> ExecResult:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        return ExecResult(
-            stdout=_truncate(out.decode("utf-8", "replace")),
-            stderr=_truncate(err.decode("utf-8", "replace")),
-            exit_code=proc.returncode or 0,
-            duration_s=time.monotonic() - start,
-        )
-    except TimeoutError:
+    # bounded streaming reads: host memory is capped regardless of output volume
+    out, err, timed_out = await bounded_communicate(proc, _OUTPUT_CAP, timeout)
+    if timed_out:
         proc.kill()
         await proc.wait()
         return ExecResult(exit_code=-1, timed_out=True, duration_s=time.monotonic() - start)
+    return ExecResult(
+        stdout=out,
+        stderr=err,
+        exit_code=proc.returncode or 0,
+        duration_s=time.monotonic() - start,
+    )
+
+
+async def _default_remove_container(cid: str) -> None:
+    """Force-remove the container (killing the docker CLIENT is not enough:
+    the daemon keeps the container running after client death)."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker",
+            "rm",
+            "-f",
+            cid,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.communicate(), timeout=30)
+    except (OSError, TimeoutError):
+        pass
 
 
 async def _default_check() -> bool:
@@ -89,10 +105,12 @@ class DockerExecutor:
         *,
         spawn: SpawnFn | None = None,
         check_available: Callable[[], bool | Awaitable[bool]] | None = None,
+        remove_container: Callable[[str], Awaitable[None]] | None = None,
     ):
         self.limits = limits or SandboxLimits()
         self._spawn = spawn or _default_spawn
         self._check = check_available or _default_check
+        self._remove = remove_container or _default_remove_container
 
     def _container_user(self, cwd: Path) -> str:
         """Match the workspace owner so the bind mount is writable, NEVER root.
@@ -110,10 +128,12 @@ class DockerExecutor:
             return self.limits.user
         return f"{uid}:{gid}"
 
-    def build_argv(self, command: str, cwd: Path, *, network: str | None = None) -> list[str]:
+    def build_argv(
+        self, command: str, cwd: Path, *, network: str | None = None, cidfile: Path | None = None
+    ) -> list[str]:
         lim = self.limits
         mount = f"type=bind,src={cwd},dst={lim.workdir}"
-        return [
+        argv = [
             "docker",
             "run",
             "--rm",
@@ -135,11 +155,11 @@ class DockerExecutor:
             mount,
             "-w",
             lim.workdir,
-            lim.image,
-            "sh",
-            "-c",
-            command,
         ]
+        if cidfile is not None:
+            argv += ["--cidfile", str(cidfile)]
+        argv += [lim.image, "sh", "-c", command]
+        return argv
 
     async def _available(self) -> bool:
         result = self._check()
@@ -147,13 +167,37 @@ class DockerExecutor:
             result = await result
         return bool(result)
 
+    async def _execute(self, command: str, cwd: Path, timeout: float, network: str | None) -> ExecResult:
+        tmp_dir = Path(tempfile.mkdtemp(prefix="safefix-cid-"))
+        cidfile = tmp_dir / "cid"
+        try:
+            result = await self._spawn(
+                self.build_argv(command, cwd, network=network, cidfile=cidfile), timeout
+            )
+            if result.timed_out:
+                await self._cleanup_container(cidfile)
+            return result
+        except asyncio.CancelledError:
+            await self._cleanup_container(cidfile)
+            raise
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    async def _cleanup_container(self, cidfile: Path) -> None:
+        try:
+            cid = cidfile.read_text(encoding="utf-8").strip()
+        except OSError:
+            return
+        if cid:
+            await self._remove(cid)
+
     async def run(self, command: str, *, cwd: Path, timeout: float) -> ExecResult:
         if not await self._available():
             raise SandboxUnavailableError(
                 "Docker daemon is not reachable; refusing to execute untrusted commands on the host. "
                 "Start Docker Desktop / the docker service, or run only deterministic mock tests."
             )
-        return await self._spawn(self.build_argv(command, cwd), timeout)
+        return await self._execute(command, cwd, timeout, network=None)
 
     async def run_trusted_prep(self, command: str, *, cwd: Path, timeout: float) -> ExecResult:
         """Trusted preparation (e.g. pip install) with controlled network access.
@@ -163,4 +207,4 @@ class DockerExecutor:
         """
         if not await self._available():
             raise SandboxUnavailableError("Docker daemon is not reachable; trusted preparation refused.")
-        return await self._spawn(self.build_argv(command, cwd, network="bridge"), timeout)
+        return await self._execute(command, cwd, timeout, network="bridge")

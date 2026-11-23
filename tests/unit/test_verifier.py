@@ -23,7 +23,7 @@ class RoutingExecutor:
     async def run(self, command, *, cwd, timeout):
         self.commands.append(command)
         failed = any(p in command for p in self.fail_patterns)
-        return ExecResult(stdout="1 failed" if failed else "all passed", exit_code=1 if failed else 0)
+        return ExecResult(stdout="1 failed" if failed else "2 passed", exit_code=1 if failed else 0)
 
 
 @pytest.fixture
@@ -134,4 +134,4 @@ async def test_eval_command_override(patched_repo, tmp_path):
         eval_command="PYTHONPATH=.deps python -m pytest -q _eval_verify",
     )
     assert report.verified
-    assert "PYTHONPATH=.deps python -m pytest -q _eval_verify" in ex.commands
+    assert any(c.startswith("PYTHONPATH=.deps python -m pytest -q _eval_verify") for c in ex.commands)

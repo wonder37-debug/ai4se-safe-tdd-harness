@@ -31,8 +31,8 @@ from safefix.repair.verifier import VerificationReport, verify_patch
 from safefix.runtime.executor import ExecutionBackend
 from safefix.runtime.workspace import cleanup_workspace, prepare_workspace
 from safefix.security.approval import ApprovalGateway
-from safefix.tools.files import ListFilesTool, ReadFileTool, SearchCodeTool
-from safefix.tools.git import GitDiffTool, GitStatusTool, _git
+from safefix.tools.files import ListFilesTool, ReadFileTool, SearchCodeTool, _walk
+from safefix.tools.git import GitDiffTool, GitStatusTool, full_candidate_diff
 from safefix.tools.patch import ApplyPatchTool
 from safefix.tools.registry import ToolRegistry
 from safefix.tools.tests import RunTestsTool
@@ -49,12 +49,34 @@ class RepairTask:
     setup_commands: list[str] = field(default_factory=list)
     budgets: Budgets = field(default_factory=Budgets)
     tool_names: list[str] | None = None
+    preseed_context: bool = False
 
 
 class ExecSummary(BaseModel):
     exit_code: int
     passed: bool
     tail: str = ""
+
+
+def _build_source_context(workspace: Path, repro_tail: str, cap: int = 20_000) -> str:
+    """Source files + reproduction evidence for single-shot generation."""
+    parts = ["Reproduction output (before repair):", repro_tail or "(empty)", "", "Workspace source:"]
+    used = sum(len(p) for p in parts)
+    for f in _walk(workspace):
+        if not f.is_file() or f.suffix not in (".py", ".ini", ".cfg", ".toml", ".txt", ".md"):
+            continue
+        try:
+            text = f.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = f.relative_to(workspace).as_posix()
+        chunk = f"\n--- {rel} ---\n{text}"
+        if used + len(chunk) > cap:
+            parts.append("\n...[context truncated]")
+            break
+        parts.append(chunk)
+        used += len(chunk)
+    return "\n".join(parts)
 
 
 class RepairOutcome(BaseModel):
@@ -106,7 +128,7 @@ async def run_repair(
         )
 
         log = EventLog()
-        sinks: list[EventSink] = [log, JsonlSink(report_dir / "events.jsonl")]
+        sinks: list[EventSink] = [log, JsonlSink(report_dir / "events.jsonl", append=False)]
         if sink is not None:
             sinks.append(sink)
         registry = ToolRegistry(
@@ -122,6 +144,11 @@ async def run_repair(
         )
         if task.tool_names is not None:
             registry = ToolRegistry([t for t in registry.tools() if t.name in task.tool_names])
+        initial_context = None
+        if task.preseed_context:
+            # Fair single-shot baseline (review 4661696758): give the ONE generation
+            # the same source + failure evidence iterative variants can gather.
+            initial_context = _build_source_context(ws.path, repro_before.tail)
         loop = AgentLoop(
             LoopDeps(
                 llm=provider,
@@ -134,11 +161,12 @@ async def run_repair(
                 memory=MemoryStore(ws.path / ".safefix-memory"),
                 sink=FanOutSink(sinks),
                 executor=executor,
+                initial_context=initial_context,
             )
         )
         result = await loop.run()
 
-        _, patch, _ = await _git(ws.path, "diff")
+        _, patch, _ = await full_candidate_diff(ws.path)
         (report_dir / "patch.diff").write_text(patch, encoding="utf-8")
 
         report = await verify_patch(

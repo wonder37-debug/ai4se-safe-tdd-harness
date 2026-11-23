@@ -12,15 +12,26 @@ agent has halted, that:
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel, Field
 
 from safefix.runtime.executor import ExecutionBackend
-from safefix.tools.git import _git
+from safefix.tools.git import DIFF_SAFE_ARGS, _git, full_candidate_diff, untracked_files
 
 _VERIFY_TIMEOUT = 300.0
+
+# Test-run configuration is protected like test code: editing pytest.ini /
+# pyproject [tool.pytest] / conftest can fake success without fixing anything
+# (review 4662992875).
+_PROTECTED_CONFIG = {"pytest.ini", "tox.ini", "setup.cfg", "conftest.py", "pyproject.toml"}
+
+# Independent verification overrides workspace pytest config and demands proof
+# that tests actually EXECUTED (collect-only returns 0 without running anything).
+_TRUSTED_PYTEST_FLAGS = " --override-ini=addopts= -p no:cacheprovider"
+_RAN_RE = re.compile(r"\d+ passed")
 
 
 class CheckResult(BaseModel):
@@ -46,12 +57,27 @@ def _is_test_path(rel: str) -> bool:
         any(p in ("tests", "test") for p in parts[:-1])
         or name.startswith("test_")
         or name.endswith("_test.py")
-        or name == "conftest.py"
+        or name in _PROTECTED_CONFIG
     )
 
 
 def _tail(result, n: int = 400) -> str:
     return (result.stdout + result.stderr)[-n:]
+
+
+def _trusted_command(cmd: str) -> str:
+    if "pytest" in cmd:
+        return cmd + _TRUSTED_PYTEST_FLAGS
+    return cmd
+
+
+def _tests_actually_passed(result) -> bool:
+    if result.exit_code != 0 or result.timed_out:
+        return False
+    output = result.stdout + result.stderr
+    if "no tests ran" in output:
+        return False
+    return bool(_RAN_RE.search(output))
 
 
 async def verify_patch(
@@ -65,38 +91,41 @@ async def verify_patch(
 ) -> VerificationReport:
     checks: list[CheckResult] = []
 
-    _, diff, _ = await _git(workspace, "diff")
+    _, diff, _ = await full_candidate_diff(workspace)
     checks.append(
-        CheckResult(name="patch_nonempty", passed=bool(diff.strip()), detail="working-tree diff vs HEAD")
+        CheckResult(
+            name="patch_nonempty",
+            passed=bool(diff.strip()),
+            detail="full candidate change vs HEAD (incl. new files)",
+        )
     )
 
-    _, name_status, _ = await _git(workspace, "diff", "--name-status")
+    _, name_status, _ = await _git(workspace, "diff", "HEAD", "--name-status", *DIFF_SAFE_ARGS)
     tampered = []
     for line in name_status.splitlines():
         parts = line.split("\t")
         if len(parts) >= 2 and parts[0][:1] in ("M", "D", "R") and _is_test_path(parts[-1]):
             tampered.append(line)
+    for rel in await untracked_files(workspace):
+        if _is_test_path(rel):
+            tampered.append(f"A\t{rel}")
     checks.append(
         CheckResult(
             name="tests_untouched",
             passed=not tampered,
-            detail="; ".join(tampered) if tampered else "no existing test files modified/deleted",
+            detail="; ".join(tampered) if tampered else "no test files/config modified, deleted or added",
         )
     )
 
-    repro_cmd = repro_command or test_command
+    repro_cmd = _trusted_command(repro_command or test_command)
     repro = await executor.run(repro_cmd, cwd=workspace, timeout=_VERIFY_TIMEOUT)
-    checks.append(
-        CheckResult(
-            name="repro_passes", passed=repro.exit_code == 0 and not repro.timed_out, detail=_tail(repro)
-        )
-    )
+    checks.append(CheckResult(name="repro_passes", passed=_tests_actually_passed(repro), detail=_tail(repro)))
 
-    regression = await executor.run(test_command, cwd=workspace, timeout=_VERIFY_TIMEOUT)
+    regression = await executor.run(_trusted_command(test_command), cwd=workspace, timeout=_VERIFY_TIMEOUT)
     checks.append(
         CheckResult(
             name="regression_passes",
-            passed=regression.exit_code == 0 and not regression.timed_out,
+            passed=_tests_actually_passed(regression),
             detail=_tail(regression),
         )
     )
@@ -106,12 +135,14 @@ async def verify_patch(
         shutil.copytree(eval_dir, eval_copy)
         try:
             eval_res = await executor.run(
-                eval_command or "python -m pytest -q _eval_verify", cwd=workspace, timeout=_VERIFY_TIMEOUT
+                _trusted_command(eval_command or "python -m pytest -q _eval_verify"),
+                cwd=workspace,
+                timeout=_VERIFY_TIMEOUT,
             )
             checks.append(
                 CheckResult(
                     name="eval_passes",
-                    passed=eval_res.exit_code == 0 and not eval_res.timed_out,
+                    passed=_tests_actually_passed(eval_res),
                     detail=_tail(eval_res),
                 )
             )

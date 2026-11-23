@@ -644,3 +644,23 @@
   权限（容器用户匹配工作区属主，永不 root）+ 两处旧测试硬编码 uid 预期修正
   （经 CI 注解定位）；最终 HEAD 8458500 上 unit-test 与 sandbox-integration
   均 success（含 ubuntu 真实沙箱修复）。凭据始终仅存 gitignored .env，未打印/提交。
+
+---
+
+# PR #1 Review 修复轮（2026-11-23 续）
+
+- 读取 12 条 review threads（7 P1 + 5 P2），逐项核对代码：**全部确认真实问题**，无误报。
+- 严格 TDD：每条先写复现失败的回归测试再修复。灾难正则用例在 RED 阶段实测挂死
+  进程（终止后继续），证明 P1 成立。
+- P1：.git 元数据围栏 + 宿主 git 硬化（fsmonitor/hooks/ext-diff/textconv）；search 逐文件
+  symlink 围栏；untracked 纳入补丁导出与验证（--no-index，避免 git add 触发 filter）；
+  测试配置防篡改 + 可信 pytest 覆盖 + "N passed" 执行证据；--cidfile + docker rm -f
+  超时/取消清理；有界流式输出；search 可杀死子进程超时。
+- P2：公平 single-shot（preseed 源码+复现证据）；events 每运行隔离；多 hunk 偏移单调匹配；
+  root 宿主 chown 工作区；墙钟预算约束在途调用（迟到 finish 拒绝）。
+- 过程中修正两处自身引入的回归：JsonlSink "w" 每次截断、GIT_CONFIG_NOSYSTEM 破坏
+  系统级 autocrlf 一致性（改为仅覆盖仓库级可执行配置）。
+- 实测：239 unit passed/2 skip；8 Docker integration passed；真实验收 2 passed（强制
+  verified，98.5s）；v2 真实 A/B/C：A 2/5 · B 5/5 · C 5/5（92,959 tokens）；v1 标记方法学
+  缺陷存档；ruff/build/净室安装全过。
+- 报告：docs/verification/review-fixes.md（逐条映射）+ evaluation/portfolio/README 更新。
