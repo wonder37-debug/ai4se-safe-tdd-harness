@@ -69,6 +69,8 @@ async def test_diff_base_frozen_against_container_commits(tmp_path):
     ws = prepare_workspace(str(repo), dest=tmp_path / "ws")
     try:
         # container commits a test-weakening change, then leaves a source edit
+        git(ws.path, "config", "user.email", "c@c")
+        git(ws.path, "config", "user.name", "C")
         (ws.path / "tests" / "test_app.py").write_text(
             "def test_noop():\n    assert True\n", encoding="utf-8"
         )
@@ -101,6 +103,8 @@ async def test_rename_of_test_file_detected_on_both_ends(tmp_path):
     )
     ws = prepare_workspace(str(repo), dest=tmp_path / "ws")
     try:
+        git(ws.path, "config", "user.email", "c@c")
+        git(ws.path, "config", "user.name", "C")
         git(ws.path, "mv", "tests/test_bad.py", "helper.py")
         git(ws.path, "commit", "-qm", "move test out of collection")
         report = await verify_patch(

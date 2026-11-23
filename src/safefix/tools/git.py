@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from pydantic import BaseModel
 
@@ -95,12 +95,35 @@ class GitDiffTool:
         return Observation(ok=True, content=out)
 
 
+# Harness-controlled exclusions for untracked enumeration. Deliberately NOT the
+# workspace .gitignore / info/exclude: the agent can edit those to hide protected
+# files (review 4665404091). Tool artifacts are excluded by fixed rules instead.
+_UNTRACKED_SKIP_DIRS = {
+    ".git",
+    ".deps",
+    "__pycache__",
+    ".safefix-memory",
+    "_eval_verify",
+    ".pytest_cache",
+    ".ruff_cache",
+}
+
+
 async def untracked_files(workspace, git_dir: Path | None = None) -> list[str]:
-    """New files not in the (frozen) index; info/exclude keeps tool junk out."""
-    rc, out, _ = await _git(workspace, "ls-files", "--others", "--exclude-standard", git_dir=git_dir)
+    """All untracked files, filtered by HARNESS rules (not workspace ignore rules)."""
+    rc, out, _ = await _git(workspace, "ls-files", "--others", git_dir=git_dir)
     if rc != 0:
         return []
-    return [line for line in out.splitlines() if line.strip()]
+    result = []
+    for line in out.splitlines():
+        rel = line.strip()
+        if not rel:
+            continue
+        parts = PurePosixPath(rel).parts
+        if any(p in _UNTRACKED_SKIP_DIRS for p in parts) or rel.endswith(".pyc"):
+            continue
+        result.append(rel)
+    return result
 
 
 _TRUNC_MARKER = "...[output truncated]"

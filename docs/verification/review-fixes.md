@@ -146,13 +146,32 @@
 - **测试**：`test_round3_security.py::test_truncated_diff_refused_as_patch`
   （>1MB 变更 → 拒绝）。
 
+## 第四轮 review（2 P1）+ CI 测试环境修复
+
+### 20. thread 4665404091 — .gitignore 隐藏受保护文件
+- **修复**：`untracked_files` 改用 `git ls-files --others`（**不带** --exclude-standard），
+  以 harness 固定规则（_UNTRACKED_SKIP_DIRS：.deps/__pycache__/.safefix-memory/
+  _eval_verify/.pytest_cache 等）过滤工具产物，不再信任工作区 .gitignore/info/exclude。
+  被隐藏的 conftest.py 仍进入补丁导出与 tests_untouched 检查。
+- **测试**：`tests/unit/test_round4_security.py::test_gitignore_cannot_hide_protected_conftest`。
+
+### 21. thread 4665404099 — read_file 读 FIFO 挂死宿主事件循环
+- **修复**：ReadFileTool 读取前 `stat.S_ISREG` 拒绝非普通文件（FIFO/socket/设备）；
+  读取改为 `f.read(_READ_CAP+1)` 有界读取，不再整文件读入后才截断。
+- **测试**：`test_round4_security.py::test_read_file_refuses_fifo`
+  （mkfifo 仅 POSIX；Windows skip，Linux CI 执行）。
+
+### CI 测试环境修复（非产品缺陷）
+- 第三轮两个测试在 clone 内 commit，clone 无 git identity；Windows 全局配置掩盖了
+  该问题，Linux CI 报 exit 128。修复：测试在 clone 内显式配置 user.email/name。
+
 ## 验证汇总（修复后实测）
 
-- 单元：**251 passed, 7 skipped**（5 个 Windows symlink 权限 + 2 个门控真实 LLM；
-  Linux CI 执行 symlink 用例），覆盖率 88%。
+- 单元：**252 passed, 8 skipped**（6 个 Windows symlink/mkfifo 权限 + 2 个门控真实 LLM；
+  Linux CI 执行这些用例），覆盖率 88%。
 - Docker 集成：**8 passed**（含容器无泄漏、沙箱内完整修复）。
 - 真实 LLM 验收（`SAFEFIX_REAL_LLM=1`）：**2 passed**（paginate + held-out querystring，
-  均强制 verified；第三轮修复后重跑仍 2 passed）。
+  均强制 verified；第三/四轮修复后重跑仍 2 passed）。
 - 修正后真实 A/B/C：**A 2/5 · B 5/5 · C 5/5**（92,959 tokens；B 均 8.8 调用、C 均 7.4）。
 - ruff 全绿；`uv build` wheel+sdist；净室安装 demo verified / mock eval 5/5。
 

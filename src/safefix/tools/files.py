@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import multiprocessing as mp
 import re
+import stat
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -63,7 +64,14 @@ class ReadFileTool:
     async def execute(self, args: ReadFileArgs, ctx: ToolContext) -> Observation:
         try:
             full = _fence(ctx.workspace, args.path)
-            text = full.read_text(encoding="utf-8")
+            # Reject non-regular files (review 4665404099): a FIFO/socket/device
+            # inside the workspace would block the host event loop on read.
+            st = full.stat()
+            if not stat.S_ISREG(st.st_mode):
+                return Observation(ok=False, error=f"not a regular file: {args.path}")
+            # Bounded read: never pull an unbounded file into host memory.
+            with full.open("r", encoding="utf-8") as f:
+                text = f.read(_READ_CAP + 1)
         except FileNotFoundError:
             return Observation(ok=False, error=f"file not found: {args.path}")
         except (OSError, ValueError, UnicodeDecodeError) as e:
