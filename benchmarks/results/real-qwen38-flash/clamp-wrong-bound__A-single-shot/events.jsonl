@@ -1,0 +1,6 @@
+{"seq":0,"type":"action","payload":{"tool":"list_files","args":{"path":".","recursive":true}},"iter":1,"ts":0.0}
+{"seq":0,"type":"observation","payload":{"ok":true,"stdout":"","stderr":"","exit_code":null,"error":null,"content":"numtools/\nnumtools/__init__.py\nnumtools/clamp.py\ntests/\ntests/test_clamp.py"},"iter":1,"ts":0.0}
+{"seq":0,"type":"halt","payload":{"reason":"cap"},"iter":1,"ts":0.0}
+{"seq":0,"type":"action","payload":{"tool":"list_files","args":{"path":".","recursive":true}},"iter":1,"ts":0.0}
+{"seq":0,"type":"observation","payload":{"ok":true,"stdout":"","stderr":"","exit_code":null,"error":null,"content":"numtools/\nnumtools/__init__.py\nnumtools/clamp.py\ntests/\ntests/test_clamp.py"},"iter":1,"ts":0.0}
+{"seq":0,"type":"halt","payload":{"reason":"cap"},"iter":1,"ts":0.0}

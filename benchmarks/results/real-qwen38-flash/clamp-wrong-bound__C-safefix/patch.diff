@@ -1,0 +1,17 @@
+diff --git a/numtools/clamp.py b/numtools/clamp.py
+index 7bcc5ce..47a18ec 100644
+--- a/numtools/clamp.py
++++ b/numtools/clamp.py
+@@ -2,8 +2,10 @@
+ 
+ 
+ def clamp(value, lo, hi):
++    if lo > hi:
++        raise ValueError("lo must not be greater than hi")
+     if value < lo:
+-        return hi
++        return lo
+     if value > hi:
+         return hi
+     return value
+\ No newline at end of file

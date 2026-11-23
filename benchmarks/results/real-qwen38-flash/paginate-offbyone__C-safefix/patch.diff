@@ -1,0 +1,12 @@
+diff --git a/shop/paginate.py b/shop/paginate.py
+index 5882758..fb2f613 100644
+--- a/shop/paginate.py
++++ b/shop/paginate.py
+@@ -3,5 +3,5 @@
+ 
+ def paginate(items, page, size):
+     """Return the ``page``-th (1-based) slice of ``items`` with ``size`` per page."""
+-    start = page * size
++    start = (page - 1) * size
+     return items[start : start + size]
+\ No newline at end of file
