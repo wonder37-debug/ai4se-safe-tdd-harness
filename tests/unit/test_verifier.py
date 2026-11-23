@@ -5,8 +5,8 @@ import subprocess
 import pytest
 
 from safefix.evaluation.fixtures import materialize_fixture
-from safefix.runtime.executor import ExecResult
 from safefix.repair.verifier import verify_patch
+from safefix.runtime.executor import ExecResult
 
 
 def git(cwd, *args):
@@ -30,7 +30,9 @@ class RoutingExecutor:
 def patched_repo(tmp_path):
     repo = materialize_fixture("paginate", tmp_path / "repo")
     impl = repo / "shop" / "paginate.py"
-    impl.write_text(impl.read_text(encoding="utf-8").replace("page * size", "(page - 1) * size"), encoding="utf-8")
+    impl.write_text(
+        impl.read_text(encoding="utf-8").replace("page * size", "(page - 1) * size"), encoding="utf-8"
+    )
     return repo
 
 
@@ -53,7 +55,11 @@ async def test_valid_patch_verifies(patched_repo, tmp_path):
 async def test_empty_patch_rejected(tmp_path):
     repo = materialize_fixture("paginate", tmp_path / "repo")
     report = await verify_patch(
-        repo, executor=RoutingExecutor(), test_command="python -m pytest -q", repro_command=None, eval_dir=None
+        repo,
+        executor=RoutingExecutor(),
+        test_command="python -m pytest -q",
+        repro_command=None,
+        eval_dir=None,
     )
     assert not report.verified
     assert any(c.name == "patch_nonempty" and not c.passed for c in report.checks)
@@ -63,7 +69,11 @@ async def test_modified_test_file_rejected(patched_repo):
     test_file = patched_repo / "tests" / "test_paginate.py"
     test_file.write_text("def test_weakened():\n    assert True\n", encoding="utf-8")
     report = await verify_patch(
-        patched_repo, executor=RoutingExecutor(), test_command="python -m pytest -q", repro_command=None, eval_dir=None
+        patched_repo,
+        executor=RoutingExecutor(),
+        test_command="python -m pytest -q",
+        repro_command=None,
+        eval_dir=None,
     )
     assert not report.verified
     assert any(c.name == "tests_untouched" and not c.passed for c in report.checks)
@@ -72,7 +82,11 @@ async def test_modified_test_file_rejected(patched_repo):
 async def test_deleted_test_file_rejected(patched_repo):
     (patched_repo / "tests" / "test_paginate.py").unlink()
     report = await verify_patch(
-        patched_repo, executor=RoutingExecutor(), test_command="python -m pytest -q", repro_command=None, eval_dir=None
+        patched_repo,
+        executor=RoutingExecutor(),
+        test_command="python -m pytest -q",
+        repro_command=None,
+        eval_dir=None,
     )
     assert not report.verified
 

@@ -28,7 +28,9 @@ def _docker_available() -> bool:
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(not _docker_available(), reason="Docker daemon unavailable — sandboxed repair NOT RUN"),
+    pytest.mark.skipif(
+        not _docker_available(), reason="Docker daemon unavailable — sandboxed repair NOT RUN"
+    ),
 ]
 
 FIX_DIFF = (

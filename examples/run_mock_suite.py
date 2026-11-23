@@ -40,7 +40,7 @@ FIXES = {
         "--- a/textutil/slugify.py\n+++ b/textutil/slugify.py\n@@ -7,3 +7,3 @@\n"
         "     text = text.lower().strip()\n"
         '     text = re.sub(r"[^a-z0-9]+", "-", text)\n'
-        "-    return text\n+    return text.strip(\"-\")\n"
+        '-    return text\n+    return text.strip("-")\n'
     ),
     "moving-average": (
         "--- a/statskit/average.py\n+++ b/statskit/average.py\n@@ -6,5 +6,5 @@\n"

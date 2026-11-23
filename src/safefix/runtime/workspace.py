@@ -30,9 +30,7 @@ class Workspace:
 
 
 def _git(cwd: Path | None, *args: str) -> str:
-    proc = subprocess.run(
-        ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=300
-    )
+    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=300)
     if proc.returncode != 0:
         raise WorkspaceError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout.strip()

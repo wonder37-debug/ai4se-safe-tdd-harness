@@ -7,14 +7,13 @@ mock execution, never as live-model benchmark performance.
 import json
 
 import yaml
+from local_executor import TrustedLocalExecutor
 
 from safefix.evaluation.metrics import RunRecord, classify_failure, summarize
 from safefix.evaluation.runner import Variant, load_suite, run_suite
 from safefix.llm.mock import ScriptedMock
 from safefix.repair.workflow import ExecSummary, RepairOutcome
 from safefix.security.approval import AutoApproveGateway
-
-from local_executor import TrustedLocalExecutor
 
 PAGINATE_FIX = (
     "--- a/shop/paginate.py\n"
@@ -73,12 +72,36 @@ def test_load_shipped_suite():
 
 def test_summarize_rates():
     records = [
-        RunRecord(task_id="a", variant="C", status="verified", halt_reason="finish", llm_calls=4, steps=4,
-                  prompt_tokens=100, completion_tokens=50, duration_s=2.0, reproducible=True,
-                  patch_generated=True, failure_category=None, report_dir="x"),
-        RunRecord(task_id="b", variant="C", status="failed", halt_reason="finish", llm_calls=1, steps=0,
-                  prompt_tokens=10, completion_tokens=5, duration_s=1.0, reproducible=True,
-                  patch_generated=False, failure_category="empty_patch", report_dir="y"),
+        RunRecord(
+            task_id="a",
+            variant="C",
+            status="verified",
+            halt_reason="finish",
+            llm_calls=4,
+            steps=4,
+            prompt_tokens=100,
+            completion_tokens=50,
+            duration_s=2.0,
+            reproducible=True,
+            patch_generated=True,
+            failure_category=None,
+            report_dir="x",
+        ),
+        RunRecord(
+            task_id="b",
+            variant="C",
+            status="failed",
+            halt_reason="finish",
+            llm_calls=1,
+            steps=0,
+            prompt_tokens=10,
+            completion_tokens=5,
+            duration_s=1.0,
+            reproducible=True,
+            patch_generated=False,
+            failure_category="empty_patch",
+            report_dir="y",
+        ),
     ]
     s = summarize(records)
     assert s.total_runs == 2 and s.verified == 1
@@ -92,7 +115,9 @@ def test_classify_failure_categories():
     from safefix.repair.verifier import CheckResult, VerificationReport
 
     def outcome(**kw):
-        base = dict(status="failed", halt_reason="finish", patch="", verification=VerificationReport(checks=[]))
+        base = dict(
+            status="failed", halt_reason="finish", patch="", verification=VerificationReport(checks=[])
+        )
         base.update(kw)
         return RepairOutcome(**base)
 
@@ -108,7 +133,11 @@ def test_classify_failure_categories():
 async def test_run_suite_offline(tmp_path):
     suite = write_suite(
         tmp_path,
-        [{"id": "t-paginate", "fixture": "paginate"}, {"id": "t-clamp", "fixture": "clamp"}, {"id": "t-nofix", "fixture": "slugify"}],
+        [
+            {"id": "t-paginate", "fixture": "paginate"},
+            {"id": "t-clamp", "fixture": "clamp"},
+            {"id": "t-nofix", "fixture": "slugify"},
+        ],
     )
     out = tmp_path / "eval-out"
     records = await run_suite(

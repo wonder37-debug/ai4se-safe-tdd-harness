@@ -24,7 +24,9 @@ def write_csv(records: list[RunRecord], path: Path) -> None:
             writer.writerow(r.model_dump())
 
 
-def write_markdown(summary: SuiteSummary, records: list[RunRecord], path: Path, *, mode_note: str = "") -> None:
+def write_markdown(
+    summary: SuiteSummary, records: list[RunRecord], path: Path, *, mode_note: str = ""
+) -> None:
     lines = [
         "# SafeFix Evaluation Report",
         "",
@@ -48,7 +50,13 @@ def write_markdown(summary: SuiteSummary, records: list[RunRecord], path: Path, 
         lines += [f"- {cat}: {count}" for cat, count in sorted(summary.failure_categories.items())]
     else:
         lines.append("- none")
-    lines += ["", "## Runs", "", "| task | variant | status | halt | calls | tokens | category |", "|---|---|---|---|---|---|---|"]
+    lines += [
+        "",
+        "## Runs",
+        "",
+        "| task | variant | status | halt | calls | tokens | category |",
+        "|---|---|---|---|---|---|---|",
+    ]
     for r in records:
         lines.append(
             f"| {r.task_id} | {r.variant} | {r.status} | {r.halt_reason} | {r.llm_calls} | "

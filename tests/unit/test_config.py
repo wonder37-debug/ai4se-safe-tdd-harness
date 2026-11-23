@@ -10,7 +10,9 @@ from safefix.llm.openai_compatible import OpenAICompatProvider
 
 def test_load_env_file(tmp_path):
     f = tmp_path / ".env"
-    f.write_text("# comment\nAPI_KEY=sk-abc\nAPI_BASE_URL=\"https://x\"\nexport MODEL=m1\n\nBAD LINE\n", encoding="utf-8")
+    f.write_text(
+        '# comment\nAPI_KEY=sk-abc\nAPI_BASE_URL="https://x"\nexport MODEL=m1\n\nBAD LINE\n', encoding="utf-8"
+    )
     env = load_env_file(f)
     assert env == {"API_KEY": "sk-abc", "API_BASE_URL": "https://x", "MODEL": "m1"}
 

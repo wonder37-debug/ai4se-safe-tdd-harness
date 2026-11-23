@@ -9,13 +9,13 @@ network); a live-model run is a separate, explicitly labelled integration test.
 import json
 import subprocess
 
+from local_executor import TrustedLocalExecutor
+
 from safefix.agent.state import Budgets
 from safefix.evaluation.fixtures import load_fixture, materialize_fixture
 from safefix.llm.mock import ScriptedMock
 from safefix.repair.workflow import RepairTask, run_repair
 from safefix.security.approval import AutoApproveGateway
-
-from local_executor import TrustedLocalExecutor
 
 FIX_DIFF = (
     "--- a/shop/paginate.py\n"
@@ -139,5 +139,6 @@ async def test_tool_names_restricts_registry(tmp_path):
         approval=AutoApproveGateway(),
         report_dir=tmp_path / "report",
     )
+    assert outcome.status != "verified"
     events = (tmp_path / "report" / "events.jsonl").read_text(encoding="utf-8")
     assert "unknown tool: search_code" in events

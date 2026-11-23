@@ -83,7 +83,9 @@ async def build_provider(
             "or configure the encrypted store. Refusing to fall back to a scripted demo."
         )
     if resolved.source != "encrypted-file":
-        log.warning("[security] plaintext API key in use (source=%s); prefer the encrypted store", resolved.source)
+        log.warning(
+            "[security] plaintext API key in use (source=%s); prefer the encrypted store", resolved.source
+        )
     return OpenAICompatProvider(
         base_url=resolved.base_url,
         api_key=resolved.key,

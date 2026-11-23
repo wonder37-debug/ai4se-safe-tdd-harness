@@ -4,9 +4,7 @@ Skipped automatically when the Docker daemon is unreachable (never silently
 executed on the host). Run with: uv run pytest tests/integration -m integration
 """
 
-import os
 import subprocess
-from pathlib import Path
 
 import pytest
 
@@ -24,7 +22,9 @@ def _docker_available() -> bool:
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(not _docker_available(), reason="Docker daemon unavailable — sandbox integration NOT RUN"),
+    pytest.mark.skipif(
+        not _docker_available(), reason="Docker daemon unavailable — sandbox integration NOT RUN"
+    ),
 ]
 
 

@@ -66,7 +66,9 @@ async def verify_patch(
     checks: list[CheckResult] = []
 
     _, diff, _ = await _git(workspace, "diff")
-    checks.append(CheckResult(name="patch_nonempty", passed=bool(diff.strip()), detail="working-tree diff vs HEAD"))
+    checks.append(
+        CheckResult(name="patch_nonempty", passed=bool(diff.strip()), detail="working-tree diff vs HEAD")
+    )
 
     _, name_status, _ = await _git(workspace, "diff", "--name-status")
     tampered = []
@@ -85,13 +87,17 @@ async def verify_patch(
     repro_cmd = repro_command or test_command
     repro = await executor.run(repro_cmd, cwd=workspace, timeout=_VERIFY_TIMEOUT)
     checks.append(
-        CheckResult(name="repro_passes", passed=repro.exit_code == 0 and not repro.timed_out, detail=_tail(repro))
+        CheckResult(
+            name="repro_passes", passed=repro.exit_code == 0 and not repro.timed_out, detail=_tail(repro)
+        )
     )
 
     regression = await executor.run(test_command, cwd=workspace, timeout=_VERIFY_TIMEOUT)
     checks.append(
         CheckResult(
-            name="regression_passes", passed=regression.exit_code == 0 and not regression.timed_out, detail=_tail(regression)
+            name="regression_passes",
+            passed=regression.exit_code == 0 and not regression.timed_out,
+            detail=_tail(regression),
         )
     )
 
@@ -104,7 +110,9 @@ async def verify_patch(
             )
             checks.append(
                 CheckResult(
-                    name="eval_passes", passed=eval_res.exit_code == 0 and not eval_res.timed_out, detail=_tail(eval_res)
+                    name="eval_passes",
+                    passed=eval_res.exit_code == 0 and not eval_res.timed_out,
+                    detail=_tail(eval_res),
                 )
             )
         finally:

@@ -180,12 +180,9 @@ class AgentLoop:
                             HaltReason.USER_ABORT, snapshot(HaltReason.USER_ABORT), user_reason=dec.reason
                         )
                     self._session.last_denied = True
-                    self.messages.append(
-                        Message(
-                            role="user",
-                            content=f"Observation: DENIED: {dec.reason} (reasons: {'; '.join(verdict.reasons)})",
-                        )
-                    )
+                    denied_text = f"Observation: DENIED: {dec.reason} (reasons: {'; '.join(verdict.reasons)})"
+                    self.messages.append(Message(role="user", content=denied_text))
+                    self._emit("observation", {"denied": denied_text})
                     continue
             elif verdict.severity == "low":
                 self.messages.append(
