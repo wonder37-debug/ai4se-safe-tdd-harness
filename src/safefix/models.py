@@ -26,6 +26,17 @@ class Action(BaseModel):
     args: dict[str, Any] = Field(default_factory=dict)
 
 
+class ToolCall(BaseModel):
+    """Native OpenAI-style tool call (function calling), normalized for dispatch."""
+
+    id: str = ""
+    name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+    def to_action(self) -> Action:
+        return Action(tool=self.name, args=self.arguments)
+
+
 class Observation(BaseModel):
     ok: bool
     stdout: str = ""
