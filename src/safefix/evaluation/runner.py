@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 from collections.abc import Callable
 from enum import StrEnum
 from pathlib import Path
@@ -78,10 +79,18 @@ async def run_suite(
     out_dir: Path,
     variants: tuple[Variant, ...] = (Variant.C,),
     mode_note: str = "",
+    model: str = "",
+    endpoint_host: str = "",
 ) -> list[RunRecord]:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     records: list[RunRecord] = []
+    try:
+        code_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, timeout=30
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        code_commit = ""
 
     for spec in load_suite(suite_path):
         fx = load_fixture(spec["fixture"])
@@ -124,6 +133,9 @@ async def run_suite(
                     variant=variant.value,
                     status=outcome.status,
                     halt_reason=outcome.halt_reason,
+                    model=model,
+                    endpoint_host=endpoint_host,
+                    code_commit=code_commit,
                     llm_calls=outcome.llm_calls,
                     steps=outcome.steps,
                     prompt_tokens=outcome.usage.prompt_tokens,

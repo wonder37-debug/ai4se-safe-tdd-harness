@@ -10,11 +10,16 @@ description: >
 tasks:
   - id: paginate-offbyone
     fixture: paginate
+    budget: {max_llm_calls: 12, max_wall_seconds: 300}
   - id: clamp-wrong-bound
     fixture: clamp
+    budget: {max_llm_calls: 12, max_wall_seconds: 300}
   - id: slugify-edge-separators
     fixture: slugify
+    budget: {max_llm_calls: 12, max_wall_seconds: 300}
   - id: moving-average-last-window
     fixture: moving-average
+    budget: {max_llm_calls: 12, max_wall_seconds: 300}
   - id: binary-search-absent
     fixture: binary-search
+    budget: {max_llm_calls: 12, max_wall_seconds: 300}

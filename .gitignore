@@ -5,6 +5,7 @@ dist/
 
 # Python (SafeFix rewrite)
 .venv/
+.venv-wsl/
 __pycache__/
 *.pyc
 .pytest_cache/

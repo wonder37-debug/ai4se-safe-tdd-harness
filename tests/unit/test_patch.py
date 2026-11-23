@@ -108,3 +108,14 @@ async def test_hunk_offset_search(ws):
 async def test_malformed_diff_rejected(ws):
     obs = await apply(ws, "this is not a diff")
     assert not obs.ok
+
+
+async def test_patch_invalidates_stale_bytecode_cache(ws):
+    # Regression: same-second mtime + coincidentally equal size made Python
+    # reuse a stale .pyc after patching, so re-tests ran the OLD code.
+    cache = ws / "__pycache__"
+    cache.mkdir()
+    (cache / "app.cpython-312.pyc").write_bytes(b"stale")
+    obs = await apply(ws, MODIFY)
+    assert obs.ok, obs.error
+    assert not cache.exists()

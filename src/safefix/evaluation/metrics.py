@@ -17,6 +17,9 @@ class RunRecord(BaseModel):
     variant: str
     status: str
     halt_reason: str
+    model: str = ""
+    endpoint_host: str = ""
+    code_commit: str = ""
     llm_calls: int = 0
     steps: int = 0
     prompt_tokens: int = 0

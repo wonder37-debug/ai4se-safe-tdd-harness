@@ -21,6 +21,7 @@ import json
 import random
 import re
 from collections.abc import Awaitable, Callable
+from urllib.parse import urlparse
 
 import httpx
 
@@ -113,6 +114,14 @@ class OpenAICompatProvider:
     def _backoff_delay(self, attempt: int) -> float:
         base = self._base_delay * (self._backoff_factor**attempt)
         return base * (0.5 + random.random() * 0.5)  # half jitter avoids retry thundering herd
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def endpoint_host(self) -> str:
+        return urlparse(self._url).hostname or ""
 
     async def complete(self, messages: list[Message], tools: list[dict] | None = None) -> LLMResponse:
         body: dict = {"model": self._model, "messages": adapt_messages(messages), "temperature": 0}

@@ -189,6 +189,7 @@ def eval_suite(
         provider_for = mock_provider_for
         executor = LocalTrustedExecutor()
         note = "**MOCK PIPELINE VALIDATION** — scripted provider; NOT live-model benchmark performance."
+        run_model, run_host = "scripted-mock", ""
         console.print(f"[yellow]{note}[/yellow]")
     elif mode == "real":
         try:
@@ -208,6 +209,7 @@ def eval_suite(
         provider_for = lambda spec, variant: provider  # noqa: E731
         executor = DockerExecutor()
         note = "Live-model evaluation."
+        run_model, run_host = provider.model, provider.endpoint_host
     else:
         _fail("--mode must be real or mock")
         return
@@ -222,6 +224,8 @@ def eval_suite(
                 out_dir=out,
                 variants=chosen,
                 mode_note=note,
+                model=run_model,
+                endpoint_host=run_host,
             )
         )
     except SandboxUnavailableError as e:

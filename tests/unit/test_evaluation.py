@@ -153,6 +153,7 @@ async def test_run_suite_offline(tmp_path):
     assert by_id["t-paginate"].status == "verified"
     assert by_id["t-clamp"].status == "verified"
     assert by_id["t-nofix"].failure_category == "empty_patch"
+    assert all(r.code_commit for r in records)  # provenance: code SHA recorded
 
     assert (out / "results.json").exists()
     assert (out / "summary.csv").exists()

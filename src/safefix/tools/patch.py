@@ -9,6 +9,7 @@ stale) and refuses on mismatch instead of corrupting the file.
 from __future__ import annotations
 
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -154,6 +155,12 @@ class ApplyPatchTool:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text(content, encoding="utf-8")
                 names.append(target.relative_to(ctx.workspace.resolve()).as_posix())
+            # Invalidate bytecode caches: a same-second rewrite with coincidentally
+            # equal size can pass Python's (mtime, size) .pyc check, making re-tests
+            # execute stale pre-patch code. The workspace is disposable; caches regenerate.
+            for cache in ctx.workspace.rglob("__pycache__"):
+                if cache.is_dir():
+                    shutil.rmtree(cache, ignore_errors=True)
         except (PatchError, ValueError, OSError) as e:
             return Observation(ok=False, error=str(e))
         return Observation(ok=True, content=f"patched {len(names)} file(s): {', '.join(names)}")
