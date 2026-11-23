@@ -142,3 +142,29 @@ async def test_tool_names_restricts_registry(tmp_path):
     assert outcome.status != "verified"
     events = (tmp_path / "report" / "events.jsonl").read_text(encoding="utf-8")
     assert "unknown tool: search_code" in events
+
+
+async def test_failed_trusted_prep_is_explicit(tmp_path):
+    """Prep failure must abort loudly, not silently poison downstream steps."""
+    import pytest
+
+    from safefix.runtime.executor import ExecResult
+
+    class FailingPrepExecutor(TrustedLocalExecutor):
+        async def run_trusted_prep(self, command, *, cwd, timeout):
+            return ExecResult(exit_code=1, stderr="pip: permission denied")
+
+    source = materialize_fixture("paginate", tmp_path / "source")
+    fx = load_fixture("paginate")
+    with pytest.raises(RuntimeError, match="preparation failed"):
+        await run_repair(
+            RepairTask(
+                repo=str(source),
+                issue=fx.meta["issue"],
+                setup_commands=["pip install pytest"],
+            ),
+            provider=ScriptedMock([action("finish", {})]),
+            executor=FailingPrepExecutor(),
+            approval=AutoApproveGateway(),
+            report_dir=tmp_path / "report",
+        )

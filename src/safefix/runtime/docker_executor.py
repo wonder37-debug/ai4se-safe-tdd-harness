@@ -94,6 +94,22 @@ class DockerExecutor:
         self._spawn = spawn or _default_spawn
         self._check = check_available or _default_check
 
+    def _container_user(self, cwd: Path) -> str:
+        """Match the workspace owner so the bind mount is writable, NEVER root.
+
+        On Linux CI the workspace is owned by the runner uid (e.g. 1001); a fixed
+        uid 1000 cannot write it. Windows stat reports uid 0 -> keep the default
+        non-root user (Docker Desktop mounts are world-writable).
+        """
+        try:
+            st = cwd.stat()
+            uid, gid = st.st_uid, st.st_gid
+        except OSError:
+            return self.limits.user
+        if uid == 0:
+            return self.limits.user
+        return f"{uid}:{gid}"
+
     def build_argv(self, command: str, cwd: Path, *, network: str | None = None) -> list[str]:
         lim = self.limits
         mount = f"type=bind,src={cwd},dst={lim.workdir}"
@@ -104,7 +120,7 @@ class DockerExecutor:
             "--network",
             network or lim.network,
             "--user",
-            lim.user,
+            self._container_user(cwd),
             "--cap-drop",
             "ALL",
             "--security-opt",

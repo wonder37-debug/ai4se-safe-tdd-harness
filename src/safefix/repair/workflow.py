@@ -88,9 +88,14 @@ async def run_repair(
         for cmd in task.setup_commands:
             prep = getattr(executor, "run_trusted_prep", None)
             if prep is not None:
-                await prep(cmd, cwd=ws.path, timeout=600)
+                result = await prep(cmd, cwd=ws.path, timeout=600)
             else:
-                await executor.run(cmd, cwd=ws.path, timeout=600)
+                result = await executor.run(cmd, cwd=ws.path, timeout=600)
+            if result.exit_code != 0 or result.timed_out:
+                raise RuntimeError(
+                    f"trusted preparation failed (exit {result.exit_code}): {cmd}\n"
+                    f"{(result.stderr or result.stdout)[-400:]}"
+                )
 
         repro_cmd = task.repro_command or task.test_command
         before = await executor.run(repro_cmd, cwd=ws.path, timeout=300)

@@ -84,6 +84,32 @@ def test_default_image_has_pytest_preinstalled():
     assert SandboxLimits().image == "safefix-sandbox:latest"
 
 
+async def test_container_user_matches_workspace_owner(tmp_path, monkeypatch):
+    # Linux CI: workspace owned by uid 1001; fixed uid 1000 cannot write the bind
+    # mount. Match the owner (still non-root). Windows reports uid 0 -> default.
+    class FakeStat:
+        st_uid = 1234
+        st_gid = 1234
+
+    monkeypatch.setattr(type(tmp_path), "stat", lambda self, **kw: FakeStat())
+    ex, spawn = make_executor()
+    await ex.run("pytest", cwd=tmp_path, timeout=10)
+    argv = spawn.calls[0]["argv"]
+    assert argv[argv.index("--user") + 1] == "1234:1234"
+
+
+async def test_container_user_never_root(tmp_path, monkeypatch):
+    class FakeStat:
+        st_uid = 0
+        st_gid = 0
+
+    monkeypatch.setattr(type(tmp_path), "stat", lambda self, **kw: FakeStat())
+    ex, spawn = make_executor()
+    await ex.run("pytest", cwd=tmp_path, timeout=10)
+    argv = spawn.calls[0]["argv"]
+    assert argv[argv.index("--user") + 1] == "1000:1000"
+
+
 async def test_trusted_prep_stage_has_network(tmp_path):
     ex, spawn = make_executor()
     await ex.run_trusted_prep("pip install -r requirements.txt", cwd=tmp_path, timeout=120)
