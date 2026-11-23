@@ -45,6 +45,7 @@ class RepairTask:
     test_command: str = "python -m pytest -q"
     repro_command: str | None = None
     eval_dir: Path | None = None
+    eval_command: str | None = None
     setup_commands: list[str] = field(default_factory=list)
     budgets: Budgets = field(default_factory=Budgets)
 
@@ -138,6 +139,7 @@ async def run_repair(
             test_command=task.test_command,
             repro_command=task.repro_command,
             eval_dir=task.eval_dir,
+            eval_command=task.eval_command,
         )
         reproducible = not repro_before.passed
         verified = report.verified and reproducible and bool(patch.strip())

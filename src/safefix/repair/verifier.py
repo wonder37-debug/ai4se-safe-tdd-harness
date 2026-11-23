@@ -61,6 +61,7 @@ async def verify_patch(
     test_command: str,
     repro_command: str | None,
     eval_dir: Path | None,
+    eval_command: str | None = None,
 ) -> VerificationReport:
     checks: list[CheckResult] = []
 
@@ -99,7 +100,7 @@ async def verify_patch(
         shutil.copytree(eval_dir, eval_copy)
         try:
             eval_res = await executor.run(
-                "python -m pytest -q _eval_verify", cwd=workspace, timeout=_VERIFY_TIMEOUT
+                eval_command or "python -m pytest -q _eval_verify", cwd=workspace, timeout=_VERIFY_TIMEOUT
             )
             checks.append(
                 CheckResult(

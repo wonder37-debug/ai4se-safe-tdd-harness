@@ -104,3 +104,20 @@ async def test_failing_eval_rejected(patched_repo, tmp_path):
     assert any(c.name == "eval_passes" and not c.passed for c in report.checks)
     # eval copies are cleaned from the workspace afterwards
     assert not (patched_repo / "_eval_verify").exists()
+
+
+async def test_eval_command_override(patched_repo, tmp_path):
+    fx_eval = tmp_path / "eval"
+    fx_eval.mkdir()
+    (fx_eval / "test_eval_ok.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    ex = RoutingExecutor()
+    report = await verify_patch(
+        patched_repo,
+        executor=ex,
+        test_command="python -m pytest -q",
+        repro_command=None,
+        eval_dir=fx_eval,
+        eval_command="PYTHONPATH=.deps python -m pytest -q _eval_verify",
+    )
+    assert report.verified
+    assert "PYTHONPATH=.deps python -m pytest -q _eval_verify" in ex.commands
