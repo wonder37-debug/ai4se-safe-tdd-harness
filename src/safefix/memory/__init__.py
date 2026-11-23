@@ -1,0 +1,1 @@
+"""Memory subpackage: simple file-backed task notes (no vector DB by design)."""

@@ -1,0 +1,1 @@
+"""LLM subpackage: provider protocol, OpenAI-compatible client, deterministic mock."""
