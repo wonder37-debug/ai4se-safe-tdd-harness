@@ -639,3 +639,8 @@
 - **报告**：docs/verification/{real-llm-validation,migration-final-audit,pr-readiness}.md
   + evidence/；README/evaluation/portfolio/limitations 同步更新为真实结果。
 - **PR**：推送 github 远端（非 origin GitLab）并开 PR 目标 main；不自动合并。
+- **PR #1 已创建**：https://github.com/wonder37-debug/ai4se-safe-tdd-harness/pull/1
+  （313 文件变更，65 个旧 TS/JS 文件删除）。CI 诊断与修复：Linux bind-mount
+  权限（容器用户匹配工作区属主，永不 root）+ 两处旧测试硬编码 uid 预期修正
+  （经 CI 注解定位）；最终 HEAD 8458500 上 unit-test 与 sandbox-integration
+  均 success（含 ubuntu 真实沙箱修复）。凭据始终仅存 gitignored .env，未打印/提交。

@@ -21,12 +21,16 @@
 
 ## 合并前风险
 
-1. **远端 CI 尚未运行**（推送后确认 GitHub Actions `unit-test` 与
-   `sandbox-integration`；后者在 ubuntu-latest 构建沙箱镜像并跑真实容器测试）。
+1. ~~远端 CI 尚未运行~~ **已解决**：HEAD `8458500` 上 `unit-test` 与
+   `sandbox-integration` 均 **success**（push + PR 双事件）。过程记录：
+   首轮 sandbox-integration 失败于 Linux bind-mount 权限（固定 uid 1000 vs
+   runner uid 1001）→ 修复为容器用户匹配工作区属主（永不 root）；随后两轮
+   失败均为旧测试硬编码 uid 1000 的预期未随语义更新（经 CI 注解定位）→
+   修正断言后全绿。沙箱内完整修复测试在 ubuntu-latest 真实通过。
 2. 真实模型样本小（5+1 任务），结论为观察性，非统计显著。
-3. `main` 自分支点无新提交预期（推送前 fetch 复核冲突）。
-4. WSL Ubuntu 的 Docker 集成未启用——不影响 PR（CI 覆盖 Linux 路径）。
+3. `main` 自分支点无新提交（fetch 复核：merge-base == github/main == 3512ba4，无冲突）。
+4. WSL Ubuntu 的 Docker 集成未启用——不影响 PR（CI 已覆盖 Linux 宿主路径）。
 
 ## 结论
 
-**GO（待远端 CI 绿灯确认）**。不自动合并；合并需仓库所有者显式授权。
+**GO**。CI 绿灯已确认；不自动合并，合并需仓库所有者显式授权。
