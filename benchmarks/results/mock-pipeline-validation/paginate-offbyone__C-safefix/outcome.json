@@ -9,7 +9,7 @@
     "completion_tokens": 0
   },
   "duration_s": 0.0,
-  "base_commit": "464f873ca2dd7d8b3ececd486fd78d8dfda24c63",
+  "base_commit": "e35da59720deb3d97dabdbbfe9d3390e48045162",
   "patch": "diff --git a/shop/paginate.py b/shop/paginate.py\nindex 5882758..fb2f613 100644\n--- a/shop/paginate.py\n+++ b/shop/paginate.py\n@@ -3,5 +3,5 @@\n \n def paginate(items, page, size):\n     \"\"\"Return the ``page``-th (1-based) slice of ``items`` with ``size`` per page.\"\"\"\n-    start = page * size\n+    start = (page - 1) * size\n     return items[start : start + size]\n\\ No newline at end of file\n",
   "repro_before": {
     "exit_code": 1,

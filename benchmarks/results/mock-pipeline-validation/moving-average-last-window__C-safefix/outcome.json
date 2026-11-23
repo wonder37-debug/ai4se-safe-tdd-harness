@@ -9,7 +9,7 @@
     "completion_tokens": 0
   },
   "duration_s": 0.0,
-  "base_commit": "ebf5ec9da52bdbce617ad628c61a0c7039d1e879",
+  "base_commit": "f4eea33c7359e537acbc7ec34195f4df4960a7fc",
   "patch": "diff --git a/statskit/average.py b/statskit/average.py\nindex 43f4085..cdfc0cd 100644\n--- a/statskit/average.py\n+++ b/statskit/average.py\n@@ -5,6 +5,6 @@ def moving_average(values, window):\n     if window <= 0:\n         raise ValueError(\"window must be positive\")\n     out = []\n-    for i in range(len(values) - window):\n+    for i in range(len(values) - window + 1):\n         out.append(sum(values[i : i + window]) / window)\n     return out\n\\ No newline at end of file\n",
   "repro_before": {
     "exit_code": 1,

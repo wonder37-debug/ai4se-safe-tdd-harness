@@ -9,12 +9,12 @@
     "completion_tokens": 0
   },
   "duration_s": 0.0,
-  "base_commit": "62396254d9708cea4eb7c10a7ff7c32022147198",
+  "base_commit": "ef2391bc27064a2c9cddab7f8091c057ab88c999",
   "patch": "diff --git a/statskit/average.py b/statskit/average.py\nindex 43f4085..cdfc0cd 100644\n--- a/statskit/average.py\n+++ b/statskit/average.py\n@@ -5,6 +5,6 @@ def moving_average(values, window):\n     if window <= 0:\n         raise ValueError(\"window must be positive\")\n     out = []\n-    for i in range(len(values) - window):\n+    for i in range(len(values) - window + 1):\n         out.append(sum(values[i : i + window]) / window)\n     return out\n\\ No newline at end of file\n",
   "repro_before": {
     "exit_code": 1,
     "passed": false,
-    "tail": "AILED tests/test_average.py::test_window_one_is_identity - assert [4.0] == [...\r\n2 failed in 0.05s\r\nD:\\workspace\\ai4se-safe-tdd-harness\\.venv\\Lib\\site-packages\\pytest_asyncio\\plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\r\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\r\n\r\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\r\n"
+    "tail": "AILED tests/test_average.py::test_window_one_is_identity - assert [4.0] == [...\r\n2 failed in 0.06s\r\nD:\\workspace\\ai4se-safe-tdd-harness\\.venv\\Lib\\site-packages\\pytest_asyncio\\plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\r\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\r\n\r\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\r\n"
   },
   "verification": {
     "checks": [

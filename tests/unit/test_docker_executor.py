@@ -78,6 +78,12 @@ async def test_custom_limits(tmp_path):
     assert "python:3.13-slim" in argv
 
 
+def test_default_image_has_pytest_preinstalled():
+    # python:3.12-slim lacks pytest; real runs need the prepared sandbox image
+    # (root Dockerfile). Regression for 'No module named pytest' in real mode.
+    assert SandboxLimits().image == "safefix-sandbox:latest"
+
+
 async def test_trusted_prep_stage_has_network(tmp_path):
     ex, spawn = make_executor()
     await ex.run_trusted_prep("pip install -r requirements.txt", cwd=tmp_path, timeout=120)

@@ -177,3 +177,21 @@ async def test_single_shot_variant_one_llm_call(tmp_path):
     )
     assert records[0].llm_calls == 1
     assert records[0].status == "verified"  # patch landed in the single call
+
+
+async def test_suite_rerun_is_idempotent(tmp_path):
+    """Regression: Windows read-only git files made rmtree(ignore_errors) leak
+    source dirs, so a second run collided with 'destination already exists'."""
+    suite = write_suite(tmp_path, [{"id": "t-paginate", "fixture": "paginate"}])
+    out = tmp_path / "out"
+    for _ in range(2):
+        records = await run_suite(
+            suite,
+            provider_for=scripted_provider_for,
+            executor=TrustedLocalExecutor(),
+            approval=AutoApproveGateway(),
+            out_dir=out,
+            variants=(Variant.C,),
+        )
+        assert records[0].status == "verified"
+    assert not (out / "src" / "t-paginate__C-safefix").exists()

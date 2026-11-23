@@ -33,5 +33,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --frozen
+      - run: docker build -t safefix-sandbox:latest .
       # Live-LLM test self-skips (NOT RUN) without credentials; sandbox tests run.
       - run: uv run pytest tests/integration -m integration -v

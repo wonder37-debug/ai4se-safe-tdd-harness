@@ -20,7 +20,21 @@ from pathlib import Path
 
 import yaml
 
-FIXTURES_ROOT = Path(__file__).resolve().parents[3] / "benchmarks" / "fixtures"
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_BUNDLED = Path(__file__).resolve().parent / "_fixtures"
+
+
+def fixtures_root() -> Path:
+    """Dev checkout uses benchmarks/fixtures; installed wheels use bundled data."""
+    dev = _REPO_ROOT / "benchmarks" / "fixtures"
+    return dev if dev.is_dir() else _BUNDLED
+
+
+def default_suite_path() -> Path:
+    dev = _REPO_ROOT / "benchmarks" / "suite.yaml"
+    if dev.is_file():
+        return dev
+    return Path(__file__).resolve().parent / "_suite.yaml"
 
 
 class FixtureError(Exception):
@@ -36,13 +50,14 @@ class Fixture:
 
 
 def list_fixtures() -> list[str]:
-    if not FIXTURES_ROOT.is_dir():
+    root = fixtures_root()
+    if not root.is_dir():
         return []
-    return sorted(p.name for p in FIXTURES_ROOT.iterdir() if (p / "task.yaml").is_file())
+    return sorted(p.name for p in root.iterdir() if (p / "task.yaml").is_file())
 
 
 def load_fixture(name: str) -> Fixture:
-    base = FIXTURES_ROOT / name
+    base = fixtures_root() / name
     if not (base / "task.yaml").is_file():
         raise FixtureError(f"unknown fixture: {name}")
     meta = yaml.safe_load((base / "task.yaml").read_text(encoding="utf-8"))

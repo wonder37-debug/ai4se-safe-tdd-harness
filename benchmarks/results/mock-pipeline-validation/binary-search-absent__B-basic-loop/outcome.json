@@ -9,7 +9,7 @@
     "completion_tokens": 0
   },
   "duration_s": 0.0,
-  "base_commit": "f1bbfdc340dfae879b2918943215c7a2f4d862da",
+  "base_commit": "b69a4817c9ec8e4ee7463f7b05f09d0b6e6c2421",
   "patch": "diff --git a/searchkit/bisect.py b/searchkit/bisect.py\nindex 5fd8570..7cd86f3 100644\n--- a/searchkit/bisect.py\n+++ b/searchkit/bisect.py\n@@ -9,4 +9,4 @@ def find_first(sorted_items, target):\n             lo = mid + 1\n         else:\n             hi = mid\n-    return lo if lo < len(sorted_items) else -1\n\\ No newline at end of file\n+    return lo if lo < len(sorted_items) and sorted_items[lo] == target else -1\n\\ No newline at end of file\n",
   "repro_before": {
     "exit_code": 1,

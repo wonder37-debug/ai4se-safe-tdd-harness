@@ -28,6 +28,7 @@ from safefix.evaluation.reporter import write_csv, write_json, write_markdown
 from safefix.llm.base import LLMProvider
 from safefix.repair.workflow import RepairTask, run_repair
 from safefix.runtime.executor import ExecutionBackend
+from safefix.runtime.workspace import _on_rm_error
 from safefix.security.approval import ApprovalGateway
 
 
@@ -87,7 +88,12 @@ async def run_suite(
         for variant in variants:
             run_id = f"{spec['id']}__{variant.value}"
             run_dir = out_dir / run_id
-            source = materialize_fixture(spec["fixture"], out_dir / "src" / run_id)
+            source_dir = out_dir / "src" / run_id
+            # idempotent reruns: robustly remove leftovers (Windows git files are
+            # read-only; plain rmtree(ignore_errors=True) silently leaks them)
+            if source_dir.exists():
+                shutil.rmtree(source_dir, onexc=_on_rm_error)
+            source = materialize_fixture(spec["fixture"], source_dir)
             try:
                 budget_data = _VARIANT_BUDGETS[variant].model_dump()
                 if variant != Variant.A:
@@ -109,7 +115,8 @@ async def run_suite(
                     report_dir=run_dir,
                 )
             finally:
-                shutil.rmtree(source, ignore_errors=True)
+                if source.exists():
+                    shutil.rmtree(source, onexc=_on_rm_error)
 
             records.append(
                 RunRecord(

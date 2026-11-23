@@ -14,6 +14,7 @@ htmlcov/
 *.egg-info/
 build/
 .safefix-runs/
+benchmarks/results/*/src/
 
 # 本地参考文档与本地 AI 指引，不纳入仓库
 CLAUDE.md

@@ -8,8 +8,8 @@
     "prompt_tokens": 0,
     "completion_tokens": 0
   },
-  "duration_s": 0.015000000013969839,
-  "base_commit": "98637f3691b90f9b2f28b0f30386dd7b50d2fd59",
+  "duration_s": 0.0,
+  "base_commit": "21cfaede921b73b4d86bbd2133cce3800755f2c0",
   "patch": "diff --git a/textutil/slugify.py b/textutil/slugify.py\nindex ffe78cc..c63d97c 100644\n--- a/textutil/slugify.py\n+++ b/textutil/slugify.py\n@@ -6,4 +6,4 @@ import re\n def slugify(text):\n     text = text.lower().strip()\n     text = re.sub(r\"[^a-z0-9]+\", \"-\", text)\n-    return text\n\\ No newline at end of file\n+    return text.strip(\"-\")\n\\ No newline at end of file\n",
   "repro_before": {
     "exit_code": 1,

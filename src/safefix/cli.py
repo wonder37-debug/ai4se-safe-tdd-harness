@@ -164,7 +164,7 @@ def fix(
 
 @app.command(name="eval")
 def eval_suite(
-    suite: Path = typer.Option(Path("benchmarks/suite.yaml"), "--suite"),
+    suite: Path = typer.Option(None, "--suite", help="Suite YAML (default: bundled benchmarks/suite.yaml)."),
     mode: str = typer.Option("real", "--mode", help="real | mock (labelled pipeline validation)."),
     variants: str = typer.Option("C", "--variants", help="Comma list of A,B,C."),
     out: Path = typer.Option(Path(".safefix-runs/eval"), "--out"),
@@ -174,7 +174,10 @@ def eval_suite(
 ):
     """Run the benchmark suite and write JSON/CSV/Markdown reports."""
     from safefix.evaluation.demo_script import mock_provider_for
+    from safefix.evaluation.fixtures import default_suite_path
     from safefix.evaluation.runner import Variant, run_suite
+
+    suite = suite or default_suite_path()
 
     variant_map = {"A": Variant.A, "B": Variant.B, "C": Variant.C}
     try:

@@ -3,7 +3,26 @@
 import subprocess
 import sys
 
-from safefix.evaluation.fixtures import list_fixtures, load_fixture, materialize_fixture
+from safefix.evaluation.fixtures import (
+    default_suite_path,
+    list_fixtures,
+    load_fixture,
+    materialize_fixture,
+)
+
+
+def test_default_suite_path_exists():
+    assert default_suite_path().is_file()
+
+
+def test_fixtures_root_falls_back_to_bundled(tmp_path, monkeypatch):
+    import safefix.evaluation.fixtures as fx
+
+    monkeypatch.setattr(fx, "_REPO_ROOT", tmp_path)  # no benchmarks/ here
+    bundled = tmp_path / "bundled"
+    bundled.mkdir()
+    monkeypatch.setattr(fx, "_BUNDLED", bundled)
+    assert fx.fixtures_root() == bundled
 
 
 def test_five_fixtures_available():

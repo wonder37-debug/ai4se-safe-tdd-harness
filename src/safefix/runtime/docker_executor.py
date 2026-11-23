@@ -29,7 +29,9 @@ _OUTPUT_CAP = 1_000_000
 
 
 class SandboxLimits(BaseModel):
-    image: str = "python:3.12-slim"
+    # Prepared sandbox image (root Dockerfile): python:3.12-slim + pytest + uid 1000.
+    # Build once: docker build -t safefix-sandbox:latest .
+    image: str = "safefix-sandbox:latest"
     memory: str = "512m"
     cpus: str = "1.0"
     pids_limit: int = Field(default=256, ge=1)

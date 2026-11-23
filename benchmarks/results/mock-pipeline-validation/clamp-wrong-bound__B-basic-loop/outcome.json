@@ -9,7 +9,7 @@
     "completion_tokens": 0
   },
   "duration_s": 0.0,
-  "base_commit": "e39b96b0ee0c4e8d288d4d4eeed8c28688fe53ce",
+  "base_commit": "54b586e2662d7397ca2acb5f6253d6549324c36a",
   "patch": "diff --git a/numtools/clamp.py b/numtools/clamp.py\nindex 7bcc5ce..388d36a 100644\n--- a/numtools/clamp.py\n+++ b/numtools/clamp.py\n@@ -2,8 +2,10 @@\n \n \n def clamp(value, lo, hi):\n+    if lo > hi:\n+        raise ValueError(\"lo must not exceed hi\")\n     if value < lo:\n-        return hi\n+        return lo\n     if value > hi:\n         return hi\n     return value\n\\ No newline at end of file\n",
   "repro_before": {
     "exit_code": 1,

@@ -9,12 +9,12 @@
     "completion_tokens": 0
   },
   "duration_s": 0.0,
-  "base_commit": "0d7cae218be35940557f136507e682d0ccdd5d10",
+  "base_commit": "ea76d2b4ce4cae0d67f47aef8cf3b661ab2eca66",
   "patch": "diff --git a/textutil/slugify.py b/textutil/slugify.py\nindex ffe78cc..c63d97c 100644\n--- a/textutil/slugify.py\n+++ b/textutil/slugify.py\n@@ -6,4 +6,4 @@ import re\n def slugify(text):\n     text = text.lower().strip()\n     text = re.sub(r\"[^a-z0-9]+\", \"-\", text)\n-    return text\n\\ No newline at end of file\n+    return text.strip(\"-\")\n\\ No newline at end of file\n",
   "repro_before": {
     "exit_code": 1,
     "passed": false,
-    "tail": "s/test_slugify.py::test_padded_punctuation - AssertionError: asser...\r\n1 failed, 1 passed in 0.05s\r\nD:\\workspace\\ai4se-safe-tdd-harness\\.venv\\Lib\\site-packages\\pytest_asyncio\\plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\r\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\r\n\r\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\r\n"
+    "tail": "s/test_slugify.py::test_padded_punctuation - AssertionError: asser...\r\n1 failed, 1 passed in 0.06s\r\nD:\\workspace\\ai4se-safe-tdd-harness\\.venv\\Lib\\site-packages\\pytest_asyncio\\plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\r\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\r\n\r\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\r\n"
   },
   "verification": {
     "checks": [
