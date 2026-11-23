@@ -177,7 +177,7 @@
 - **修复**：`untracked_files` 用 `ls-files --others -z`，按 NUL 分割、不 strip，
   原始路径直接用于 --no-index diff。
 - **测试**：`test_round5_security.py::test_non_ascii_new_file_exported`
-  （新模块.py 完整出现在导出补丁中）。
+  （把导出补丁应用到原始仓库，校验 `新模块.py` 的文件名与内容，兼容 Git 对路径的引号转义）。
 
 ### 24. thread 4665584631 — 二进制变更导出不可应用
 - **修复**：tracked 与 --no-index diff 统一加 `--binary`；另发现并修复伴生缺陷：

@@ -67,8 +67,11 @@ async def test_non_ascii_new_file_exported(tmp_path):
         (ws.path / "app.py").write_text("from 新模块 import VALUE\nx = VALUE\n", encoding="utf-8")
         rc, diff, err = await full_candidate_diff(ws.path, ws.git_dir)
         assert rc == 0, err
-        assert "新模块.py" in diff, "non-ASCII new file silently dropped from patch"
         assert "VALUE = 42" in diff
+        patch = tmp_path / "candidate.diff"
+        patch.write_bytes(diff.encode("utf-8"))
+        git(repo, "apply", str(patch))
+        assert (repo / "新模块.py").read_text(encoding="utf-8") == "VALUE = 42\n"
     finally:
         cleanup_workspace(ws)
 

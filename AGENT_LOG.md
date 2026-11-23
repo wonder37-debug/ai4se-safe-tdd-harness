@@ -706,3 +706,7 @@
 - **提交前复核**（2026-11-23，`verification-before-completion` / `finishing-a-development-branch`）：
   Windows 全量 247 通过、16 跳过，覆盖率 88%。本机 Docker daemon 不可用，8 个 Docker 集成用例跳过，
   2 个真实 LLM 用例保持门控关闭，另有 6 个 Windows 文件权限相关跳过。Ruff 检查与格式校验通过。
+- **Linux CI 回归复核**（2026-11-23，`systematic-debugging` / `test-driven-development`）：
+  `1825d82` 的 `unit-test` 中有 1 个用例失败。Linux 默认 `core.quotePath=true` 时，补丁以引号转义中文路径，
+  原断言只接受未转义的文件名。Windows 在单进程启用同一配置后复现失败。测试现将补丁应用到原始仓库，
+  校验中文文件名和文件内容。
