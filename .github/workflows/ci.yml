@@ -17,11 +17,23 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check src/safefix tests
       - run: uv run ruff format --check src/safefix tests
-      - run: uv run pytest tests/unit --cov=safefix --cov-report=xml
+      - name: Unit tests (failures surfaced as annotations)
+        run: |
+          set +e
+          uv run pytest tests/unit --cov=safefix --cov-report=xml -v --tb=short 2>&1 | tee pytest-output.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -E "^FAILED|^ERROR" pytest-output.log | while IFS= read -r line; do echo "::error::$line"; done
+            tail -n 80 pytest-output.log | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit "$status"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: coverage
-          path: coverage.xml
+          path: |
+            coverage.xml
+            pytest-output.log
           retention-days: 7
 
   sandbox-integration:
@@ -35,4 +47,13 @@ jobs:
       - run: uv sync --frozen
       - run: docker build -t safefix-sandbox:latest .
       # Live-LLM test self-skips (NOT RUN) without credentials; sandbox tests run.
-      - run: uv run pytest tests/integration -m integration -v
+      - name: Sandbox integration (failures surfaced as annotations)
+        run: |
+          set +e
+          uv run pytest tests/integration -m integration -v --tb=short 2>&1 | tee pytest-output.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -E "^FAILED|^ERROR" pytest-output.log | while IFS= read -r line; do echo "::error::$line"; done
+            tail -n 80 pytest-output.log | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit "$status"
