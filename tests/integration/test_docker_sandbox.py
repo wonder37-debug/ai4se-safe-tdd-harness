@@ -40,7 +40,11 @@ async def test_echo_runs_in_container(executor, tmp_path):
 
 async def test_non_root_user(executor, tmp_path):
     result = await executor.run("id -u", cwd=tmp_path, timeout=120)
-    assert result.exit_code == 0 and result.stdout.strip() == "1000"
+    # container user matches the workspace owner (CI uid 1001), never root
+    st = tmp_path.stat()
+    expected = "1000" if st.st_uid == 0 else str(st.st_uid)
+    assert result.exit_code == 0 and result.stdout.strip() == expected
+    assert result.stdout.strip() != "0"
 
 
 async def test_network_disabled(executor, tmp_path):
