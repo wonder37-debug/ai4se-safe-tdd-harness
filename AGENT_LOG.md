@@ -616,3 +616,26 @@
   覆盖率 89%（ui_app 未装 streamlit 不计）。所有声明均有测试/运行证据支撑。
 - **TDD 偏差记录**：security/cli_approval.py 一处实现先于测试落盘（同批补测试并验证），其余模块均严格红→绿。
 - **最终验证**：206 unit passed + 1 skipped；8 integration passed；ruff 全绿；`safefix demo` 实测 verified。
+
+---
+
+# 最终验证与 PR 交付（2026-11-23 续）
+
+- **独立复核**：旧报告 214/2/89%/8/15 全部复核一致；发现并修复 4 个工程缺陷：
+  ① 陈旧 .pyc（WSL 确定性复现：同秒 mtime + 尺寸巧合 → 补丁后重测执行旧代码；
+  修复：apply_patch 后清 __pycache__，回归测试）② 沙箱默认镜像缺 pytest（改用
+  safefix-sandbox:latest + conftest 自动构建 + CI 构建步骤）③ wheel 数据路径错配
+  （净室安装暴露；修复后净室 demo verified / eval 5/5）④ Windows rmtree 泄漏致
+  套件重跑碰撞（onexc 处理器 + 幂等重跑测试）。
+- **真实 LLM（qwen3.8-flash，凭据经 gitignored .env，绝不打印/提交）**：
+  冒烟 6 项全过（含原生 tool calling 与显式 AuthError）；3 次真实修复 verified
+  （paginate 7 调用 / held-out querystring 10 调用 / 门控集成 10 调用）；
+  真实 A/B/C：A 0/5、B 5/5、C 5/5，85,785 tokens，预算 ≤12 调用/任务。
+- **Linux 验证**：WSL2 Ubuntu 212 passed 0 skipped（symlink 真实执行）；
+  WSL Docker 集成未启用（不改动用户设置），Linux 宿主沙箱由 CI ubuntu 覆盖。
+- **旧实现清除**：68 个 TS/JS/Jest/Node 配置文件删除；历史文档与 Git 历史保留。
+- **最终矩阵**：Windows 219 passed/2 skipped；WSL 212/0；ruff 全绿；uv build 成功；
+  净室安装冒烟通过；密钥扫描干净。
+- **报告**：docs/verification/{real-llm-validation,migration-final-audit,pr-readiness}.md
+  + evidence/；README/evaluation/portfolio/limitations 同步更新为真实结果。
+- **PR**：推送 github 远端（非 origin GitLab）并开 PR 目标 main；不自动合并。
