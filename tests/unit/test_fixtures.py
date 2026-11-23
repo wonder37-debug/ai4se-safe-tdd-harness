@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+from pathlib import Path
 
 from safefix.evaluation.fixtures import (
     default_suite_path,
@@ -23,6 +24,16 @@ def test_fixtures_root_falls_back_to_bundled(tmp_path, monkeypatch):
     bundled.mkdir()
     monkeypatch.setattr(fx, "_BUNDLED", bundled)
     assert fx.fixtures_root() == bundled
+
+
+def test_bundled_location_matches_wheel_layout():
+    # force-include maps benchmarks/fixtures -> safefix/_fixtures (package root),
+    # NOT safefix/evaluation/_fixtures. Regression for clean-install demo failure.
+    import safefix
+    import safefix.evaluation.fixtures as fx
+
+    pkg_root = Path(safefix.__file__).resolve().parent
+    assert fx._BUNDLED == pkg_root / "_fixtures"
 
 
 def test_five_fixtures_available():

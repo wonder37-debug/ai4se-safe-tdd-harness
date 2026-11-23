@@ -21,7 +21,8 @@ from pathlib import Path
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_BUNDLED = Path(__file__).resolve().parent / "_fixtures"
+# wheel force-include bundles data at the PACKAGE root (safefix/_fixtures, safefix/_suite.yaml)
+_BUNDLED = Path(__file__).resolve().parent.parent / "_fixtures"
 
 
 def fixtures_root() -> Path:
@@ -34,7 +35,7 @@ def default_suite_path() -> Path:
     dev = _REPO_ROOT / "benchmarks" / "suite.yaml"
     if dev.is_file():
         return dev
-    return Path(__file__).resolve().parent / "_suite.yaml"
+    return Path(__file__).resolve().parent.parent / "_suite.yaml"
 
 
 class FixtureError(Exception):
