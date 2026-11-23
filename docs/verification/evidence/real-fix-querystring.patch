@@ -1,0 +1,14 @@
+diff --git a/urlkit/parse.py b/urlkit/parse.py
+index 8a75294..b450f46 100644
+--- a/urlkit/parse.py
++++ b/urlkit/parse.py
+@@ -12,5 +12,7 @@ def parse_query(query):
+         if not part:
+             continue
+         key, _, value = part.partition("=")
+-        result[key] = value
++        if key not in result:
++            result[key] = []
++        result[key].append(value)
+     return result
+\ No newline at end of file

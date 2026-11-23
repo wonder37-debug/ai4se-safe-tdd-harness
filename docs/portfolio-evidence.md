@@ -41,11 +41,24 @@
    - 证据：`benchmarks/results/mock-pipeline-validation/`（15 运行，**标注 MOCK**）
    - 测试：`tests/unit/test_evaluation.py`
 
-8. **206 个离线单元测试，覆盖率 89%（ui_app 除外），ruff 全绿**
+8. **211 个离线单元测试（WSL Linux 212 全过），覆盖率 89%（ui_app 除外），ruff 全绿**
    - 复现：`uv run pytest tests/unit --cov=safefix`
+
+9. **真实模型（qwen3.8-flash）独立验证的自动修复 ×3**
+   - 证据：`docs/verification/evidence/real-fix-*-outcome.json` + `*.patch`
+   - 含 held-out 缺陷 querystring（不在任何脚本答案中）；每次均复现转绿 +
+     回归 + 独立 eval + 测试未篡改 + 原仓库零改动
+   - 复现：`uv run safefix fix --repo ... --mode real`（需凭据）
+
+10. **真实 A/B/C 基准：A 0/5 · B 5/5 · C 5/5（85,785 tokens，预算受控）**
+    - 证据：`benchmarks/results/real-qwen38-flash/`（JSON/CSV/MD，与 MOCK 分离）
+    - 复现：`uv run safefix eval --suite benchmarks/suite.yaml --mode real --variants A,B,C`
+
+11. **验证中发现并修复 4 个工程缺陷**（陈旧 .pyc / 沙箱镜像 / wheel 数据路径 /
+    Windows rmtree 泄漏），均有回归测试——见 docs/verification/real-llm-validation.md §4
 
 ## 不可声明的事项（截至当前）
 
-- 真实 LLM 修复成功率（NOT RUN，无凭据）。
+- 一般性 bug 修复能力（样本 5+1 个极小任务，观察性结论，无统计显著性）。
 - 外部真实项目 CVE 修复（fixture 为自研缺陷复现）。
-- 统计显著性改进（样本 5 任务）。
+- 美元成本数字（token 已记录，定价表未内置）。

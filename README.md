@@ -40,8 +40,12 @@
   A/B/C 基线（单发 / 基础循环 / 完整 SafeFix），JSON + CSV + Markdown 报告。
 - **CLI（Typer + Rich）**：`demo / fix / eval / report / creds / ui`；
   可选 Streamlit 运行查看器（仅 localhost）。
-- **206 个离线单元测试 + 8 个真实 Docker 沙箱集成测试**，核心机制全部可在
+- **211 个离线单元测试（Windows，1 个因 symlink 权限 skip；WSL2 Linux 下 212 个全过）
+  + 8 个真实 Docker 沙箱集成测试**，核心机制全部可在
   无网络、无真实 LLM 条件下用 ScriptedMock 验证。
+- **真实模型验证已完成**（qwen3.8-flash，OpenAI 兼容端点）：3 次独立验证的
+  真实修复 verified（含一个不在脚本答案中的 held-out 缺陷）；真实 A/B/C 基准
+  A 0/5 · B 5/5 · C 5/5。详见 [docs/verification/real-llm-validation.md](docs/verification/real-llm-validation.md)。
 
 ## 架构
 
@@ -111,11 +115,14 @@ uv run pytest tests/unit                        # 离线、确定性、无网络
 uv run pytest tests/integration -m integration  # 真实 Docker 沙箱（daemon 不可达则 skip）
 uv run pytest tests/unit --cov=safefix          # 覆盖率（当前约 89%，ui_app 除外）
 uv run python examples/run_mock_suite.py        # 5 任务 × A/B/C 管线验证（MOCK，非模型成绩）
+uv run python examples/real_smoke.py            # 真实 API 冒烟（需 .env 凭据）
+uv run safefix eval --suite benchmarks/suite.yaml --mode real --variants A,B,C  # 真实基准
 ```
 
 真实 LLM 集成测试（`tests/integration/test_real_llm.py`）需要
 `SAFEFIX_REAL_LLM=1` + 有效凭据，否则**明确标记 NOT RUN**。
-本仓库当前未配置凭据，故真实模型修复能力**尚无实测证据**——这是诚实的已知限制。
+配置凭据后已实测通过（真实修复 verified，62s）；真实结果与复现步骤见
+[docs/verification/](docs/verification/real-llm-validation.md)。
 
 ## 安全限制（务必阅读）
 
@@ -129,8 +136,8 @@ uv run python examples/run_mock_suite.py        # 5 任务 × A/B/C 管线验证
 
 ## 已知问题与路线图
 
-见 [docs/limitations.md](docs/limitations.md)。要点：真实 LLM 端到端成绩待测；
-fixture 为自研缺陷复现（非外部 CVE）；Jest/Java/C++ 目标仓库适配器未实现；
+见 [docs/limitations.md](docs/limitations.md)。要点：真实模型样本小（5+1 任务，
+观察性结论）；fixture 为自研缺陷复现（非外部 CVE）；Jest/Java/C++ 目标仓库适配器未实现；
 Windows 宿主直接运行沙箱依赖 Docker Desktop（推荐 WSL2）。
 
 ## 文档索引
