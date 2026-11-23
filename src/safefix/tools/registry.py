@@ -21,6 +21,7 @@ from safefix.runtime.executor import ExecutionBackend
 class ToolContext:
     workspace: Path
     executor: ExecutionBackend | None = None
+    git_dir: Path | None = None
 
 
 class Tool(Protocol):

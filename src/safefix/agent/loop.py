@@ -60,6 +60,7 @@ class LoopDeps:
     cancel_event: asyncio.Event | None = None
     monotonic: Callable[[], float] = time.monotonic
     initial_context: str | None = None
+    git_dir: Path | None = None
 
 
 class AgentLoop:
@@ -103,7 +104,7 @@ class AgentLoop:
         steps = 0
         last_fail_key: str | None = None
         same_count = 0
-        ctx = ToolContext(workspace=deps.workspace, executor=deps.executor)
+        ctx = ToolContext(workspace=deps.workspace, executor=deps.executor, git_dir=deps.git_dir)
 
         def snapshot(reason: HaltReason) -> LoopResult:
             return LoopResult(

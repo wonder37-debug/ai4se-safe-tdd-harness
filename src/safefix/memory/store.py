@@ -32,15 +32,27 @@ class MemoryStore:
         return self._dir / f"{key}.md"
 
     async def read(self) -> list[Note]:
+        # Fence (review 4665182703): the target repo may plant symlinks in the
+        # memory dir pointing at host files (.env etc.); never follow them into
+        # the system prompt.
+        if self._dir.is_symlink():
+            return []
         try:
             files = sorted(self._dir.iterdir())
         except (FileNotFoundError, NotADirectoryError):
             return []
-        return [
-            Note(key=f.stem, note=f.read_text(encoding="utf-8"))
-            for f in files
-            if f.is_file() and f.suffix == ".md"
-        ]
+        root = self._dir.resolve()
+        notes = []
+        for f in files:
+            if not f.is_file() or f.suffix != ".md" or f.is_symlink():
+                continue
+            try:
+                if not f.resolve().is_relative_to(root):
+                    continue
+                notes.append(Note(key=f.stem, note=f.read_text(encoding="utf-8")))
+            except (OSError, UnicodeDecodeError):
+                continue
+        return notes
 
     async def write(self, key: str, note: str) -> None:
         path = self._file(key)

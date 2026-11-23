@@ -158,15 +158,18 @@ async def run_repair(
                 feedback=FeedbackClassifier(PytestParser()),
                 budgets=task.budgets,
                 system_prompt=build_system_prompt(task.issue),
-                memory=MemoryStore(ws.path / ".safefix-memory"),
+                memory=MemoryStore(report_dir / "memory"),
                 sink=FanOutSink(sinks),
                 executor=executor,
                 initial_context=initial_context,
+                git_dir=ws.git_dir,
             )
         )
         result = await loop.run()
 
-        _, patch, _ = await full_candidate_diff(ws.path)
+        rc, patch, diff_err = await full_candidate_diff(ws.path, ws.git_dir)
+        if rc != 0:
+            raise RuntimeError(f"patch export failed: {diff_err}")
         (report_dir / "patch.diff").write_text(patch, encoding="utf-8")
 
         report = await verify_patch(
@@ -176,6 +179,7 @@ async def run_repair(
             repro_command=task.repro_command,
             eval_dir=task.eval_dir,
             eval_command=task.eval_command,
+            git_dir=ws.git_dir,
         )
         reproducible = not repro_before.passed
         verified = report.verified and reproducible and bool(patch.strip())

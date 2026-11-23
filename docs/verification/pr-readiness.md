@@ -34,3 +34,13 @@
 ## 结论
 
 **GO**。CI 绿灯已确认；不自动合并，合并需仓库所有者显式授权。
+
+## Review 修复轮（12 + 2 条）
+
+- 第一轮 12 条（7 P1 + 5 P2）与第二轮 2 条新 P1 全部确认为真实问题，逐项 TDD 修复，
+  逐条回复并 resolve（14/14）。映射见 `docs/verification/review-fixes.md`。
+- 修复后：247 unit passed / 6 skip（4 Windows symlink + 2 门控真实 LLM）；
+  8 Docker integration passed；真实验收 2 passed（强制 verified）；
+  v2 真实 A/B/C：A 2/5 · B 5/5 · C 5/5。
+- 最新 SHA `e88364d`：GitHub Actions `unit-test` 与 `sandbox-integration` 均 **success**
+  （push + PR 双事件，Linux 真实执行 symlink/容器清理回归）。

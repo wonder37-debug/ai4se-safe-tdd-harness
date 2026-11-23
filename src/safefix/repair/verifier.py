@@ -88,10 +88,11 @@ async def verify_patch(
     repro_command: str | None,
     eval_dir: Path | None,
     eval_command: str | None = None,
+    git_dir: Path | None = None,
 ) -> VerificationReport:
     checks: list[CheckResult] = []
 
-    _, diff, _ = await full_candidate_diff(workspace)
+    _, diff, _ = await full_candidate_diff(workspace, git_dir)
     checks.append(
         CheckResult(
             name="patch_nonempty",
@@ -100,15 +101,23 @@ async def verify_patch(
         )
     )
 
-    _, name_status, _ = await _git(workspace, "diff", "HEAD", "--name-status", *DIFF_SAFE_ARGS)
+    _, name_status, _ = await _git(
+        workspace, "diff", "HEAD", "--name-status", *DIFF_SAFE_ARGS, git_dir=git_dir
+    )
     tampered = []
     for line in name_status.splitlines():
         parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        status = parts[0][:1]
         # M/D/R/T/C all change test content; T (type change, e.g. file -> symlink
         # to a passing helper) must not bypass the check (review 4664964020).
-        if len(parts) >= 2 and parts[0][:1] in ("M", "D", "R", "T", "C") and _is_test_path(parts[-1]):
+        # Renames/copies carry BOTH paths: moving a test out of collection is
+        # tampering even if the destination looks innocent (review 4665182720).
+        paths = parts[1:] if status in ("R", "C") else [parts[-1]]
+        if status in ("M", "D", "R", "T", "C") and any(_is_test_path(p) for p in paths):
             tampered.append(line)
-    for rel in await untracked_files(workspace):
+    for rel in await untracked_files(workspace, git_dir):
         if _is_test_path(rel):
             tampered.append(f"A\t{rel}")
     checks.append(

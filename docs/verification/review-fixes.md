@@ -96,12 +96,63 @@
 - **测试**：`tests/unit/test_loop_deadline.py`（0.15s 迟到 finish / 0.2s 工具
   vs 0.02s 预算 → BUDGET_EXCEEDED，耗时 <0.1s）。
 
+## 第二轮 review（2 条新 P1，针对第一轮修复）
+
+### 13. thread 4664964008 — root chown 跟随 symlink 改宿主文件所有者
+- **修复**：`_ensure_container_writable` 跳过 symlink 条目，且
+  `os.chown(..., follow_symlinks=False)`；所有权变更严格限于 clone 内对象。
+- **测试**：`test_workflow_integrity.py::test_root_chown_does_not_follow_symlinks`
+  （mock root + 外部目标 symlink，断言 follow_symlinks=False 且外部目标未被 chown；
+  Windows symlink 权限 skip，Linux CI 执行）。
+
+### 14. thread 4664964020 — 测试文件类型变更（T）绕过防篡改
+- **修复**：verifier 状态过滤扩展为 M/D/R/T/C（file→symlink 指向通过测试的 helper
+  产生 T，必须拒绝）。
+- **测试**：`test_workflow_integrity.py::test_type_change_of_test_file_rejected`
+  （测试文件替换为 symlink 后 tests_untouched 失败；Linux CI 执行）。
+
+## 第三轮 review（4 P1 + 1 P2，针对可写挂载与交付完整性）
+
+### 15. thread 4665182698 — 容器写 .git/config 的 clean filter 被宿主 git 执行
+### 16. thread 4665182713 — 容器提交移动 HEAD，防篡改/导出失去原始基准
+- **统一修复**：`prepare_workspace._snapshot_git_dir` 在准备期冻结一份**净化 .git 快照**
+  （最小安全 config：无 filter 驱动、fsmonitor off、hooksPath 中和；移除 hooks 与
+  info/attributes），HEAD/index 冻结于 base commit。所有宿主 git 读取
+  （status/diff/ls-files/验证）经 `--git-dir <快照> --work-tree <工作区>`，
+  容器对可写挂载中 .git 的任何修改（filter/HEAD/refs）均不影响宿主读取。
+  `Workspace.git_dir` 贯穿 ToolContext/LoopDeps/verifier/full_candidate_diff；
+  cleanup 同时清理快照。
+- **测试**：`tests/unit/test_round3_security.py::test_container_written_filter_driver_not_executed_by_host_git`
+  （模拟容器写入 filter.evil.clean + .gitattributes，宿主 diff 不执行标记命令）；
+  `::test_diff_base_frozen_against_container_commits`（容器提交弱化测试后，
+  导出仍含测试变更且 tests_untouched 失败）。
+
+### 17. thread 4665182720 — rename 记录只查目标路径
+- **修复**：verifier 对 R/C 状态检查**两端**路径（parts[1:]），任一端为受保护
+  测试路径即判篡改。
+- **测试**：`test_round3_security.py::test_rename_of_test_file_detected_on_both_ends`
+  （git mv tests/test_bad.py → helper.py 并提交，tests_untouched 失败）。
+
+### 18. thread 4665182703 — memory symlink 将宿主文件注入 system prompt
+- **修复**：双重防御：(1) workflow 将 MemoryStore 移至 **report_dir/memory**
+  （harness 控制，目标仓库不可控）；(2) `MemoryStore.read` 拒绝目录本身为 symlink、
+  跳过 symlink 条目、逐文件 resolve+包含检查。
+- **测试**：`test_round3_security.py::test_memory_symlink_does_not_leak_into_prompt`
+  （外部 canary .md symlink 不进 prompt；Windows 权限 skip，Linux CI 执行）。
+
+### 19. thread 4665182729 — 截断的 git 输出被当作完整补丁交付
+- **修复**：`full_candidate_diff` 检测截断标记 → 显式失败（rc=-1）；
+  workflow 导出失败时 raise RuntimeError，绝不交付不完整补丁。
+- **测试**：`test_round3_security.py::test_truncated_diff_refused_as_patch`
+  （>1MB 变更 → 拒绝）。
+
 ## 验证汇总（修复后实测）
 
-- 单元：**239 passed, 2 skipped**（均为 Windows symlink 权限；Linux CI 执行），覆盖率 88%。
+- 单元：**251 passed, 7 skipped**（5 个 Windows symlink 权限 + 2 个门控真实 LLM；
+  Linux CI 执行 symlink 用例），覆盖率 88%。
 - Docker 集成：**8 passed**（含容器无泄漏、沙箱内完整修复）。
 - 真实 LLM 验收（`SAFEFIX_REAL_LLM=1`）：**2 passed**（paginate + held-out querystring，
-  均强制 verified，98.5s）。
+  均强制 verified；第三轮修复后重跑仍 2 passed）。
 - 修正后真实 A/B/C：**A 2/5 · B 5/5 · C 5/5**（92,959 tokens；B 均 8.8 调用、C 均 7.4）。
 - ruff 全绿；`uv build` wheel+sdist；净室安装 demo verified / mock eval 5/5。
 

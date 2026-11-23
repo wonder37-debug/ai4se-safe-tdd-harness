@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -47,9 +48,14 @@ class GitArgs(BaseModel):
     pass
 
 
-async def _git(workspace, *args: str) -> tuple[int, str, str]:
+async def _git(workspace, *args: str, git_dir: Path | None = None) -> tuple[int, str, str]:
+    prefix = []
+    if git_dir is not None:
+        # frozen sanitized metadata: container cannot influence config/HEAD/index
+        prefix = ["--git-dir", str(git_dir), "--work-tree", str(workspace)]
     proc = await asyncio.create_subprocess_exec(
         "git",
+        *prefix,
         *GIT_HARDEN_ARGS,
         *args,
         cwd=workspace,
@@ -71,7 +77,7 @@ class GitStatusTool:
     description = "Show working-tree status (porcelain) of the task workspace."
 
     async def execute(self, args: GitArgs, ctx: ToolContext) -> Observation:
-        rc, out, err = await _git(ctx.workspace, "status", "--porcelain")
+        rc, out, err = await _git(ctx.workspace, "status", "--porcelain", git_dir=ctx.git_dir)
         if rc != 0:
             return Observation(ok=False, error=err.strip() or f"git status failed (exit {rc})")
         return Observation(ok=True, content=out.strip() or "clean (no changes)")
@@ -83,34 +89,45 @@ class GitDiffTool:
     description = "Show the full candidate change vs HEAD (tracked + new files)."
 
     async def execute(self, args: GitArgs, ctx: ToolContext) -> Observation:
-        rc, out, err = await full_candidate_diff(ctx.workspace)
+        rc, out, err = await full_candidate_diff(ctx.workspace, ctx.git_dir)
         if rc != 0:
             return Observation(ok=False, error=err.strip() or f"git diff failed (exit {rc})")
         return Observation(ok=True, content=out)
 
 
-async def untracked_files(workspace) -> list[str]:
-    """New files not in the index (info/exclude keeps tool junk out)."""
-    rc, out, _ = await _git(workspace, "ls-files", "--others", "--exclude-standard")
+async def untracked_files(workspace, git_dir: Path | None = None) -> list[str]:
+    """New files not in the (frozen) index; info/exclude keeps tool junk out."""
+    rc, out, _ = await _git(workspace, "ls-files", "--others", "--exclude-standard", git_dir=git_dir)
     if rc != 0:
         return []
     return [line for line in out.splitlines() if line.strip()]
 
 
-async def full_candidate_diff(workspace) -> tuple[int, str, str]:
-    """Complete candidate change: tracked diff vs HEAD + synthesized new-file diffs.
+_TRUNC_MARKER = "...[output truncated]"
+
+
+async def full_candidate_diff(workspace, git_dir: Path | None = None) -> tuple[int, str, str]:
+    """Complete candidate change vs the FROZEN base: tracked diff + new-file diffs.
 
     Deliberately avoids `git add` (which would execute repo-configured clean/smudge
     filter drivers on the host). Untracked files are diffed with --no-index.
+    A truncated diff is NEVER delivered as a patch (review 4665182729): explicit
+    failure instead of a silently incomplete candidate.
     """
-    rc, tracked, err = await _git(workspace, "diff", "HEAD", *DIFF_SAFE_ARGS)
+    rc, tracked, err = await _git(workspace, "diff", "HEAD", *DIFF_SAFE_ARGS, git_dir=git_dir)
     if rc != 0:
         return rc, tracked, err
+    if _TRUNC_MARKER in tracked:
+        return -1, "", "candidate diff exceeded output cap; refusing to deliver a truncated patch"
     parts = [tracked] if tracked.strip() else []
-    for rel in await untracked_files(workspace):
-        rc2, out2, err2 = await _git(workspace, "diff", "--no-index", *DIFF_SAFE_ARGS, "--", "/dev/null", rel)
+    for rel in await untracked_files(workspace, git_dir):
+        rc2, out2, err2 = await _git(
+            workspace, "diff", "--no-index", *DIFF_SAFE_ARGS, "--", "/dev/null", rel, git_dir=git_dir
+        )
         if rc2 not in (0, 1):  # --no-index exits 1 when differences exist
             return rc2, "", err2
+        if _TRUNC_MARKER in out2:
+            return -1, "", f"new-file diff for {rel} exceeded output cap; refusing truncated patch"
         if out2.strip():
             parts.append(out2)
     return 0, "\n".join(parts), ""
