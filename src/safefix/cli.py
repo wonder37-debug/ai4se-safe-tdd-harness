@@ -19,12 +19,14 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from safefix.agent.protocol import TOOL_NAMES
 from safefix.agent.state import Budgets
 from safefix.config import ConfigError, Mode, build_provider, load_env_file
 from safefix.creds.store import CredentialError, EncryptedFileStore
 from safefix.evaluation.fixtures import load_fixture, materialize_fixture
 from safefix.llm.demo import demo_responses
 from safefix.llm.mock import ScriptedMock
+from safefix.models import ExecutionEvent, FeedbackKind
 from safefix.repair.workflow import RepairTask, run_repair
 from safefix.runtime.demo_executor import DemoExecutor
 from safefix.runtime.docker_executor import DockerExecutor
@@ -56,8 +58,26 @@ def _fail(message: str) -> None:
     raise typer.Exit(code=1)
 
 
+class ConsoleTrace:
+    """Render only recognized event metadata; logs keep the full observations."""
+
+    def emit(self, event: ExecutionEvent) -> None:
+        if event.type == "usage":
+            console.print(f"usage: {event.payload['tokens']} tokens | {event.payload['elapsed_s']:.1f}s")
+        elif event.type == "action":
+            name = event.payload.get("tool")
+            console.print(f"round {event.iter} | {name if name in TOOL_NAMES else 'unknown tool'}")
+        elif event.type == "observation" and event.payload.get("kind") in FeedbackKind:
+            console.print(f"test feedback: {event.payload['kind']}")
+        elif event.type == "approval_decision":
+            console.print(
+                "action approved" if event.payload.get("decision") == "approve" else "action denied"
+            )
+
+
 @app.command()
 def demo(
+    trace: bool = typer.Option(False, "--trace", help="Show live actions and cumulative usage."),
     report_dir: Path = typer.Option(
         Path(".safefix-runs/demo"), "--report-dir", help="Where to write the demo evidence."
     ),
@@ -74,6 +94,7 @@ def demo(
                 provider=ScriptedMock(demo_responses()),
                 executor=DemoExecutor(),
                 approval=AutoDenyGateway(),
+                sink=ConsoleTrace() if trace else None,
                 report_dir=report_dir,
             )
         )
@@ -101,6 +122,7 @@ def fix(
         None, "--eval-dir", help="Independent evaluation tests (kept from the agent)."
     ),
     eval_command: str = typer.Option(None, "--eval-command"),
+    trace: bool = typer.Option(False, "--trace", help="Show live actions and cumulative usage."),
     max_calls: int = typer.Option(20, "--max-calls"),
     max_steps: int = typer.Option(40, "--max-steps"),
     wall_seconds: float = typer.Option(600.0, "--wall-seconds"),
@@ -147,6 +169,7 @@ def fix(
             provider=provider,
             executor=DockerExecutor(),
             approval=approval,
+            sink=ConsoleTrace() if trace else None,
             report_dir=report_dir,
         )
 

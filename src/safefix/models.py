@@ -104,7 +104,7 @@ class TokenUsage(BaseModel):
 
 
 EventType = Literal[
-    "thought", "action", "observation", "approval_request", "approval_decision", "halt", "state"
+    "thought", "action", "observation", "approval_request", "approval_decision", "halt", "state", "usage"
 ]
 
 

@@ -97,3 +97,13 @@ def test_eval_mock_pipeline(tmp_path):
     data = json.loads((tmp_path / "out" / "results.json").read_text(encoding="utf-8"))
     assert data[0]["status"] == "verified"
     assert "mock" in result.output.lower()
+
+
+def test_demo_trace_exposes_progress_without_tool_arguments(tmp_path):
+    result = runner.invoke(app, ["demo", "--trace", "--report-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "round 1 | run_tests" in result.output
+    assert "test feedback: assertion" in result.output
+    assert "round 6 | finish" in result.output
+    assert "usage: 0 tokens" in result.output
+    assert "python -m pytest" not in result.output

@@ -156,6 +156,7 @@ class AgentLoop:
                 prompt_tokens=usage.prompt_tokens + resp.usage.prompt_tokens,
                 completion_tokens=usage.completion_tokens + resp.usage.completion_tokens,
             )
+            self._emit("usage", {"tokens": usage.total_tokens, "elapsed_s": deps.monotonic() - start})
             self.messages.append(Message(role="assistant", content=resp.text))
             said = strip_action_fences(resp.text)
             if said:
