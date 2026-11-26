@@ -32,6 +32,7 @@ from safefix.runtime.demo_executor import DemoExecutor
 from safefix.runtime.docker_executor import DockerExecutor
 from safefix.runtime.executor import SandboxUnavailableError
 from safefix.runtime.local_executor import LocalTrustedExecutor
+from safefix.runtime.workspace import WorkspaceError
 from safefix.security.approval import AutoApproveGateway, AutoDenyGateway
 from safefix.security.cli_approval import CliApprovalGateway
 
@@ -111,7 +112,9 @@ def demo(
 
 @app.command()
 def fix(
-    repo: str = typer.Option(..., "--repo", help="Local git repository path or Git URL."),
+    repo: str | None = typer.Option(
+        None, "--repo", help="Local Git repository or URL (default: current directory)."
+    ),
     issue: str = typer.Option(None, "--issue", help="Natural-language bug report."),
     issue_file: Path = typer.Option(None, "--issue-file", help="Read the bug report from a file."),
     mode: Mode = typer.Option(Mode.REAL, "--mode", help="real | mock (scripted, sandboxed)."),
@@ -139,6 +142,10 @@ def fix(
         _fail("provide --issue or --issue-file")
     if mode == Mode.DEMO:
         _fail("use `safefix demo` for the demonstration mode")
+    if repo is None:
+        if not (Path.cwd() / ".git").exists():
+            _fail("run from a Git repository root or provide --repo")
+        repo = str(Path.cwd())
 
     async def _run():
         if mode == Mode.MOCK:
@@ -175,7 +182,7 @@ def fix(
 
     try:
         outcome = asyncio.run(_run())
-    except (ConfigError, SandboxUnavailableError, CredentialError) as e:
+    except (ConfigError, SandboxUnavailableError, CredentialError, WorkspaceError) as e:
         _fail(str(e))
     console.print(f"status: [bold]{outcome.status}[/bold]  halt={outcome.halt_reason}")
     console.print(f"report: {report_dir / 'outcome.json'}")

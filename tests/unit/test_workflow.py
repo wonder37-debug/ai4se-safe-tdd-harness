@@ -168,3 +168,71 @@ async def test_failed_trusted_prep_is_explicit(tmp_path):
             approval=AutoApproveGateway(),
             report_dir=tmp_path / "report",
         )
+
+
+async def test_runner_error_stops_before_model_call(tmp_path):
+    from safefix.runtime.executor import ExecResult
+
+    class BrokenRunner(TrustedLocalExecutor):
+        async def run(self, command, *, cwd, timeout):
+            return ExecResult(exit_code=1, stderr="python: No module named pytest")
+
+    source = materialize_fixture("paginate", tmp_path / "source")
+    report = tmp_path / "report"
+    outcome = await run_repair(
+        RepairTask(repo=str(source), issue="Fix pagination"),
+        provider=ScriptedMock(make_responses()),
+        executor=BrokenRunner(),
+        approval=AutoApproveGateway(),
+        report_dir=report,
+    )
+    assert outcome.status == "failed"
+    assert outcome.llm_calls == 0
+    assert outcome.repro_before.classification == "runner_error"
+    assert "No module named pytest" in (report / "outcome.json").read_text(encoding="utf-8")
+    assert (report / "patch.diff").read_bytes() == b""
+
+
+async def test_verification_runs_delivered_patch_in_a_separate_workspace(tmp_path):
+    class RecordingExecutor(TrustedLocalExecutor):
+        def __init__(self):
+            super().__init__()
+            self.workspaces = []
+
+        async def run(self, command, *, cwd, timeout):
+            self.workspaces.append(cwd)
+            return await super().run(command, cwd=cwd, timeout=timeout)
+
+    source = materialize_fixture("paginate", tmp_path / "source")
+    executor = RecordingExecutor()
+    outcome = await run_repair(
+        RepairTask(repo=str(source), issue="Fix pagination"),
+        provider=ScriptedMock(make_responses()),
+        executor=executor,
+        approval=AutoApproveGateway(),
+        report_dir=tmp_path / "report",
+    )
+    assert outcome.status == "verified"
+    assert len(set(executor.workspaces)) == 2
+    assert executor.workspaces[-1] != executor.workspaces[0]
+    assert any(c.name == "patch_applied_cleanly" and c.passed for c in outcome.verification.checks)
+
+
+async def test_bad_export_is_not_verified_even_if_agent_workspace_was_fixed(tmp_path, monkeypatch):
+    from safefix.repair import workflow
+
+    async def broken_export(*args, **kwargs):
+        return 0, "corrupted diff\n", ""
+
+    monkeypatch.setattr(workflow, "full_candidate_diff", broken_export)
+    source = materialize_fixture("paginate", tmp_path / "source")
+    outcome = await run_repair(
+        RepairTask(repo=str(source), issue="Fix pagination"),
+        provider=ScriptedMock(make_responses()),
+        executor=TrustedLocalExecutor(),
+        approval=AutoApproveGateway(),
+        report_dir=tmp_path / "report",
+    )
+    assert outcome.status == "unverified"
+    assert [c.name for c in outcome.verification.checks if not c.passed] == ["patch_applied_cleanly"]
+    assert (tmp_path / "report" / "patch.diff").read_bytes() == b"corrupted diff\n"

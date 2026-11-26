@@ -50,6 +50,8 @@ def classify_failure(outcome: RepairOutcome) -> str | None:
         return None
     if outcome.repro_before is not None and outcome.repro_before.passed:
         return "not_reproducible"
+    if outcome.halt_reason == "baseline_runner_error":
+        return "baseline_runner_error"
     if not outcome.patch.strip():
         return "empty_patch"
     if any(c.name == "tests_untouched" and not c.passed for c in outcome.verification.checks):

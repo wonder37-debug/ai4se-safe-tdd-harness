@@ -144,7 +144,8 @@ async def run_suite(
                     prompt_tokens=outcome.usage.prompt_tokens,
                     completion_tokens=outcome.usage.completion_tokens,
                     duration_s=outcome.duration_s,
-                    reproducible=outcome.repro_before is not None and not outcome.repro_before.passed,
+                    reproducible=outcome.repro_before is not None
+                    and outcome.repro_before.classification == "test_failed",
                     patch_generated=bool(outcome.patch.strip()),
                     failure_category=classify_failure(outcome),
                     policy_denials=_count_denials(run_dir / "events.jsonl"),

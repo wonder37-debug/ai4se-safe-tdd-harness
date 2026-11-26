@@ -68,3 +68,39 @@
 - 一般性 bug 修复能力（样本 5+1 个极小任务，观察性结论，无统计显著性）。
 - 外部真实项目 CVE 修复（fixture 为自研缺陷复现）。
 - 美元成本数字（token 已记录，定价表未内置）。
+
+## 公开开源项目复验
+
+```bash
+uv sync --frozen
+uv run python examples/replay_more_itertools.py
+uv run safefix report .safefix-runs/more-itertools-1304
+```
+
+这个示例会下载固定版本的 more-itertools，并在本机运行它的 pytest 测试。样例源于 [issue #1304](https://github.com/more-itertools/more-itertools/issues/1304)，基准固定为 `790bb0bb2c03e7a07282e5f16f4b1fde35b8fcf5`。在临时克隆中提交两个复现用例后，脚本模型提出 [上游已发布的实现补丁](https://github.com/more-itertools/more-itertools/pull/1305)。SafeFix 导出补丁，在独立副本上用 Git 重新应用，再执行复现、项目测试与额外行为检查。
+
+实测基线有 2 个失败，重放后复现用例 2 个通过，全项目 768 个测试、21,202 个 subtest 通过，额外行为检查 2 个通过。
+
+此案例使用脚本模型和真实 pytest，验证的是补丁交付与复验流程。真实模型验收和小样本 A/B/C 结果是此前在 SafeFix 自建样例上的独立证据。
+
+## 开源与岗位调研应用（2026-11-26）
+
+Star 数为当日 GitHub 查询快照，按项目四舍五入。
+
+| 项目 | Star 约数 | 适合学什么 |
+| --- | ---: | --- |
+| [OpenCode](https://github.com/anomalyco/opencode) | 229k | [CLI](https://opencode.ai/docs/cli/) 支持项目目录和非交互入口，SafeFix 默认接受当前仓库，继续支持显式路径与 Git URL |
+| [OpenHands](https://github.com/OpenHands/OpenHands) | 94k | [评测仓库](https://github.com/OpenHands/benchmarks) 将评测任务放在独立设施中，SafeFix 先做好固定基准和独立复验 |
+| [learn-claude-code](https://github.com/shareAI-lab/learn-claude-code) | 81k | 前两课把工具分发放在可手读的小循环里，可对照 SafeFix 的 AgentLoop 与 ToolRegistry |
+| [Aider](https://github.com/Aider-AI/aider) | 50k | [测试反馈](https://aider.chat/docs/usage/lint-test.html) 与 [仓库结构摘要](https://aider.chat/docs/repomap.html) 可用于减少盲目尝试，先验证收益再扩大上下文 |
+| [LangGraph](https://github.com/langchain-ai/langgraph) | 45k | 适合学习持久化与人工介入，SafeFix 的课程目标适合继续保留自有循环 |
+| [mini-SWE-agent](https://github.com/SWE-agent/mini-swe-agent) | 10k | [轨迹文件](https://mini-swe-agent.com/latest/usage/output_files/)同存模型调用、动作和结果，SafeFix 已有 trace 与 report，可用两者串起证据 |
+
+小红书的 [Coding Agent 实习](https://job.xiaohongshu.com/campus/intern/position/19021) 明确关注 loop、上下文、依赖和真实测试闭环，[Agent 工程岗位](https://job.xiaohongshu.com/campus/intern/position/22526) 还列出结构化输出、工具调用与回归评测。[百度代码智能相关实习](https://talent.baidu.com/jobs/detail/INTERN/e3cec5b8-b7a3-4946-99fc-b292b749cd53) 加上工程基础、Python/Java/Go、代码分析与应用框架经验。字节的 [Agent 开发岗位转载](https://jobs.ultraai.site/jobs/bytedance_campus/7701627607725394229) 强调 Benchmark 和问题归因。[OpenAI 的 Codex 岗位](https://openai.com/careers/applied-ai-engineer-codex-core-agent-san-francisco/) 是偏资深的工程参考，关注任务解决率、工具策略、性能与线上失败分析。
+
+[牛客面经](https://www.nowcoder.com/discuss/940040254214389760) 的个人分享涉及模型与 Harness 的分工、工具调用细节、基准数据质量与个人贡献。[Anthropic 的评估实践](https://www.anthropic.com/research/demystifying-evals-for-ai-agents) 用环境中的最终结果验收，[Hamel Husain 和 Shreya Shankar 的工程博客](https://hamel.dev/blog/posts/evals-faq/why-is-error-analysis-so-important-in-llm-evals-and-how-is-it-performed.html) 建议从轨迹中的第一处失败入手归因。SafeFix 据此把测试环境错误提前暴露，把成功判定落在实际交付补丁上。
+
+### 简历建议表述
+
+- 使用 Python 实现面向 Git 仓库的测试驱动代码修复 Agent，串联结构化工具调用、Docker 测试执行与 pytest 反馈，输出补丁和运行轨迹。
+- 将基线用例失败与测试环境错误分开处理，在独立 Git 副本重放交付补丁并复验，使用 more-itertools 公开历史缺陷验证交付流程。

@@ -40,7 +40,7 @@
   A/B/C 基线（单发 / 基础循环 / 完整 SafeFix），JSON + CSV + Markdown 报告。
 - **CLI（Typer + Rich）**：`demo / fix / eval / report / creds / ui`；
   可选 Streamlit 运行查看器（仅 localhost）。
-- **253 个离线单元测试（Windows 实测 247 通过，6 个因 symlink/mkfifo 权限跳过）
+- **离线单元测试（部分权限相关用例在 Windows 上可能跳过）
   + 8 个真实 Docker 沙箱集成测试**，核心机制全部可在
   无网络、无真实 LLM 条件下用 ScriptedMock 验证。
 - **真实模型验证已完成**（qwen3.8-flash，OpenAI 兼容端点）：验收测试强制
@@ -61,7 +61,7 @@ safefix CLI (cli.py)
                文件/补丁/git：工作区内受控操作
                run_tests：Docker 沙箱 (runtime/docker_executor.py)
            → 反馈分类 (feedback/) 回灌 → 预算/进展感知重试
-      4. git diff 提取 → 独立验证 (repair/verifier.py)
+      4. 输出 git diff → 在基准副本重放补丁并验证 (repair/verifier.py)
       5. outcome.json / patch.diff / events.jsonl → 清理工作区
 ```
 
@@ -69,32 +69,29 @@ safefix CLI (cli.py)
 
 ## 快速开始
 
-环境要求：**Python 3.12+**、[uv](https://docs.astral.sh/uv/)、Git；
-真实修复任务需要 **Docker**（Windows 11 推荐 WSL2 Ubuntu + Docker Desktop，见下）。
+在 SafeFix 目录中运行。离线演示需要 Python 3.12+、Git 和 [uv](https://docs.astral.sh/uv/)。
 
 ```bash
-uv sync                      # 创建 .venv 并安装依赖（含 dev 组）
-uv run safefix --help
-uv run safefix demo          # 离线确定性机制演示（无需网络/Docker/凭据）
-uv run pytest tests/unit     # 206 个离线单元测试
+uv sync --frozen
+uv run safefix demo --trace
 ```
 
-### WSL2 / Docker 设置（Windows 11）
-
-1. 安装 Docker Desktop 并启用 WSL2 后端（设置 → General → Use the WSL 2 based engine）。
-2. 在 WSL2 Ubuntu 中克隆本仓库并 `uv sync`（项目可直接在 WSL 内开发运行）。
-3. 验证：`docker info` 可达；`uv run pytest tests/integration -m integration`
-   应全部通过（Docker 不可达时这些测试**显式 skip = NOT RUN**，不会冒充成功）。
-4. 可选：`docker build -t safefix-sandbox:latest .` 构建预装 pytest 的沙箱镜像。
-
-### API 凭据设置（real 模式）
+要修复真实仓库，先启动 Docker 的 Linux 容器引擎并构建一次沙箱镜像：
 
 ```bash
-uv run safefix creds set          # 隐藏输入 API key + 主密码 → ~/.safefix/creds.enc
-export MASTER_PASSWORD=...        # 或写入进程环境（注意 .env 为明文，见安全模型）
-# 或者使用 .env（明文兜底，带告警）：API_KEY / API_BASE_URL / MODEL
-uv run safefix fix --repo /path/to/repo --issue "paginate() 第 1 页返回了第 2 页的内容" --mode real
+docker build -t safefix-sandbox:latest .
 ```
+
+将 `.env.example` 复制为 Git 已忽略的 `.env`，填入 `API_KEY`、`API_BASE_URL` 和 `MODEL`。也可以用 `safefix creds set` 配置加密存储。Windows 上可以在 PowerShell 运行这些命令，Docker Desktop 可以在后台使用 WSL2。
+
+```bash
+uv run safefix fix --repo /path/to/repo --issue "paginate() 第 1 页返回了第 2 页的数据" --trace
+uv run safefix report .safefix-runs/fix
+```
+
+`--repo` 接受本地路径或 Git URL，若已在目标仓库根目录可省略。默认测试命令为 `python -m pytest -q`，可用 `--repro-command` 单独指定失败用例、用 `--test-command` 配置回归测试。默认镜像提供 Python 与 pytest，项目专用依赖需准备在容器环境中。
+
+`verified` 表示已有 pytest 用例在基线上失败，且交付的 `patch.diff` 可在从同一基准预留的独立副本上应用并通过验证。基线没有实际失败用例时，SafeFix 会在调用模型前结束并记录原因。查看[公开缺陷复验和简历证据](docs/portfolio-evidence.md#公开开源项目复验)。
 
 ### CLI 示例
 

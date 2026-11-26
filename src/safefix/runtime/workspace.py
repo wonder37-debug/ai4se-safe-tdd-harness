@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from safefix.tools.git import GIT_HARDEN_ARGS, GIT_HARDEN_ENV
+from safefix.tools.git import _git as _async_git
 
 # Tool-generated artifacts that must never enter the candidate patch.
 _EXCLUDES = [
@@ -132,6 +133,17 @@ def prepare_workspace(repo: str, *, dest: Path | None = None) -> Workspace:
     _ensure_container_writable(dest)
     git_dir = _snapshot_git_dir(dest)
     return Workspace(path=dest, base_commit=base_commit, source=source, git_dir=git_dir)
+
+
+async def apply_exported_patch(workspace: Workspace, patch: Path) -> str | None:
+    """Apply the exact deliverable to a disposable verification workspace."""
+    rc, _, err = await _async_git(
+        workspace.path, "apply", "--whitespace=nowarn", "--", str(patch.resolve()), git_dir=workspace.git_dir
+    )
+    if rc != 0:
+        return err.strip() or f"git apply failed (exit {rc})"
+    _ensure_container_writable(workspace.path)
+    return None
 
 
 def _on_rm_error(func, path, exc_info):

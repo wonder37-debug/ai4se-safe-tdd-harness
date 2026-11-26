@@ -2256,3 +2256,9 @@ git commit -m "feat(dist): Dockerfile, CI unit-test job, README"
 | M4 A/B/C 评估 + 报告 + mock 管线验证 | ✅ | c364078 |
 | M5 CLI + CI + 文档 + 简历证据 | ✅ | 04fbaee / 1eb9df7 + 文档提交 |
 | 后续：real 模型评估 / 扩充基准 / 多语言适配器 | ⬜ | 见 docs/limitations.md 路线图 |
+
+## Python SafeFix：修复结果复验
+
+- [x] 区分 pytest 用例失败、全绿与运行环境错误。基线未确认缺陷时停止模型循环并保存证据。
+- [x] 用独立工作区重放最终 `patch.diff`，核对工作区基准并重跑验证测试。
+- [x] 简化本地仓库入口，更新快速开始，运行离线回归和真实上游历史案例。

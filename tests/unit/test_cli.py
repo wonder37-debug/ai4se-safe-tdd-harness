@@ -107,3 +107,23 @@ def test_demo_trace_exposes_progress_without_tool_arguments(tmp_path):
     assert "round 6 | finish" in result.output
     assert "usage: 0 tokens" in result.output
     assert "python -m pytest" not in result.output
+
+
+def test_fix_in_current_repository_without_repo_option(tmp_path, monkeypatch):
+    import safefix.cli as cli_mod
+    from safefix.repair.workflow import RepairOutcome
+
+    repo = materialize_fixture("paginate", tmp_path / "repo")
+    script = tmp_path / "script.json"
+    script.write_text("[]", encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    async def run(task, **kwargs):
+        assert task.repo == str(repo)
+        return RepairOutcome(status="verified", halt_reason="finish")
+
+    monkeypatch.setattr(cli_mod, "run_repair", run)
+    result = runner.invoke(
+        app, ["fix", "--issue", "Fix pagination", "--mode", "mock", "--script", str(script)]
+    )
+    assert result.exit_code == 0, result.output
