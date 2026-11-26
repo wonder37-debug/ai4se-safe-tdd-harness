@@ -1,0 +1,6 @@
+{"seq":0,"type":"action","payload":{"tool":"apply_patch","args":{"diff":"--- a/statskit/average.py\n+++ b/statskit/average.py\n@@ -6,5 +6,5 @@\n         raise ValueError(\"window must be positive\")\n     out = []\n-    for i in range(len(values) - window):\n+    for i in range(len(values) - window + 1):\n         out.append(sum(values[i : i + window]) / window)\n     return out\n"}},"iter":1,"ts":0.0}
+{"seq":0,"type":"observation","payload":{"ok":true,"stdout":"","stderr":"","exit_code":null,"error":null,"content":"patched 1 file(s): statskit/average.py"},"iter":1,"ts":0.0}
+{"seq":0,"type":"halt","payload":{"reason":"cap"},"iter":1,"ts":0.0}
+{"seq":0,"type":"action","payload":{"tool":"apply_patch","args":{"diff":"--- a/statskit/average.py\n+++ b/statskit/average.py\n@@ -6,5 +6,5 @@\n         raise ValueError(\"window must be positive\")\n     out = []\n-    for i in range(len(values) - window):\n+    for i in range(len(values) - window + 1):\n         out.append(sum(values[i : i + window]) / window)\n     return out\n"}},"iter":1,"ts":0.0}
+{"seq":0,"type":"observation","payload":{"ok":true,"stdout":"","stderr":"","exit_code":null,"error":null,"content":"patched 1 file(s): statskit/average.py"},"iter":1,"ts":0.0}
+{"seq":0,"type":"halt","payload":{"reason":"cap"},"iter":1,"ts":0.0}

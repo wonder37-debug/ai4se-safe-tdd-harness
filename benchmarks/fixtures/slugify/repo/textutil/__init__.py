@@ -1,0 +1,1 @@
+"""textutil (SafeFix benchmark fixture)."""

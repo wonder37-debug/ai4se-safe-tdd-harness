@@ -1,0 +1,6 @@
+{"seq":0,"type":"action","payload":{"tool":"list_files","args":{"path":".","recursive":true}},"iter":1,"ts":0.0}
+{"seq":0,"type":"observation","payload":{"ok":true,"stdout":"","stderr":"","exit_code":null,"error":null,"content":"tests/\ntests/test_slugify.py\ntextutil/\ntextutil/__init__.py\ntextutil/slugify.py"},"iter":1,"ts":0.0}
+{"seq":0,"type":"halt","payload":{"reason":"cap"},"iter":1,"ts":0.0}
+{"seq":0,"type":"action","payload":{"tool":"list_files","args":{"path":".","recursive":true}},"iter":1,"ts":0.0}
+{"seq":0,"type":"observation","payload":{"ok":true,"stdout":"","stderr":"","exit_code":null,"error":null,"content":"tests/\ntests/test_slugify.py\ntextutil/\ntextutil/__init__.py\ntextutil/slugify.py"},"iter":1,"ts":0.0}
+{"seq":0,"type":"halt","payload":{"reason":"cap"},"iter":1,"ts":0.0}

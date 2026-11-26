@@ -1,0 +1,3 @@
+{"seq":1,"type":"action","payload":{"tool":"apply_patch","args":{"diff":"--- a/numtools/clamp.py\n+++ b/numtools/clamp.py\n@@ -1,9 +1,11 @@\n \"\"\"Clamp a value into an inclusive range.\"\"\"\n \n \n def clamp(value, lo, hi):\n+    if lo > hi:\n+        raise ValueError(\"lo must be <= hi\")\n     if value < lo:\n-        return hi\n+        return lo\n     if value > hi:\n         return hi\n     return value\n"}},"iter":1,"ts":1795430896.0507882}
+{"seq":2,"type":"observation","payload":{"ok":true,"stdout":"","stderr":"","exit_code":null,"error":null,"content":"patched 1 file(s): numtools/clamp.py"},"iter":1,"ts":1795430896.280855}
+{"seq":3,"type":"halt","payload":{"reason":"cap"},"iter":1,"ts":1795430896.280855}

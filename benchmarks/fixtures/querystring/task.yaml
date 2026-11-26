@@ -1,0 +1,20 @@
+id: querystring-repeated-keys
+title: "parse_query() drops repeated keys and violates its list contract"
+language: python
+framework: pytest
+license: MIT (original fixture written for SafeFix; held-out, no scripted fix exists)
+defect_class: incorrect data processing / contract violation
+issue: |
+  urlkit/parse.py documents that parse_query(query) returns a dict mapping each
+  key to a LIST of values, preserving repeated keys in order
+  ("tag=x&tag=y" -> {"tag": ["x", "y"]}) and treating a bare key as an
+  empty-string value ("a" -> {"a": [""]}). The current implementation overwrites
+  repeated keys and returns plain strings. Fix the implementation to honor the
+  documented contract. Do not modify the tests.
+repro_command: "python -m pytest -q tests/test_parse.py"
+test_command: "python -m pytest -q"
+setup: []
+budget:
+  max_llm_calls: 12
+  max_steps: 24
+  max_wall_seconds: 300

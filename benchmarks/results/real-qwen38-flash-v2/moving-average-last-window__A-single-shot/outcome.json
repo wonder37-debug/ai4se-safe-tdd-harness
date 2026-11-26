@@ -1,0 +1,49 @@
+{
+  "status": "verified",
+  "halt_reason": "cap",
+  "iterations": 1,
+  "llm_calls": 1,
+  "steps": 1,
+  "usage": {
+    "prompt_tokens": 891,
+    "completion_tokens": 2462
+  },
+  "duration_s": 42.15600000001723,
+  "base_commit": "7b450ec506ff701ce810eaa0dd846605f631d2c4",
+  "patch": "diff --git a/statskit/average.py b/statskit/average.py\nindex 43f4085..cdfc0cd 100644\n--- a/statskit/average.py\n+++ b/statskit/average.py\n@@ -5,6 +5,6 @@ def moving_average(values, window):\n     if window <= 0:\n         raise ValueError(\"window must be positive\")\n     out = []\n-    for i in range(len(values) - window):\n+    for i in range(len(values) - window + 1):\n         out.append(sum(values[i : i + window]) / window)\n     return out\n\\ No newline at end of file\n",
+  "repro_before": {
+    "exit_code": 1,
+    "passed": false,
+    "tail": "ng_average([1, 2, 3], 2) == [1.5, 2.5]\nE       assert [1.5] == [1.5, 2.5]\nE         \nE         Right contains one more item: 2.5\nE         Use -v to get more diff\n\ntests/test_average.py:5: AssertionError\n_________________________ test_window_one_is_identity __________________________\n\n    def test_window_one_is_identity():\n>       assert moving_average([4, 5], 1) == [4.0, 5.0]\nE       assert [4.0] == [4.0, 5.0]\nE         \nE         Right contains one more item: 5.0\nE         Use -v to get more diff\n\ntests/test_average.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_average.py::test_window_two - assert [1.5] == [1.5, 2.5]\nFAILED tests/test_average.py::test_window_one_is_identity - assert [4.0] == [...\n2 failed in 0.18s\n"
+  },
+  "verification": {
+    "checks": [
+      {
+        "name": "patch_nonempty",
+        "passed": true,
+        "detail": "full candidate change vs HEAD (incl. new files)"
+      },
+      {
+        "name": "tests_untouched",
+        "passed": true,
+        "detail": "no test files/config modified, deleted or added"
+      },
+      {
+        "name": "repro_passes",
+        "passed": true,
+        "detail": "..                                                                       [100%]\n2 passed in 0.07s\n"
+      },
+      {
+        "name": "regression_passes",
+        "passed": true,
+        "detail": "..                                                                       [100%]\n2 passed in 0.06s\n"
+      },
+      {
+        "name": "eval_passes",
+        "passed": true,
+        "detail": ".....                                                                    [100%]\n5 passed in 0.08s\n"
+      }
+    ]
+  },
+  "failure_analysis": null
+}

@@ -2240,3 +2240,25 @@ git commit -m "feat(dist): Dockerfile, CI unit-test job, README"
 - 串行主干：任务 1 → 任务 2 →（任务 3、4、9 可并行）→（任务 5 → 任务 6）→（任务 7、8、10、11 可并行）→ 任务 12 →（任务 13、14 可并行）→ 任务 15 → 任务 16 → 任务 17 → 任务 18。
 - 可在隔离 worktree 并行（任务 4）：任务 2 后 任务 3‖4‖9；任务 6 后 任务 7‖8‖10‖11；任务 12 后 任务 13‖14。
 - 按 SPEC §12 T4 裁剪：按里程碑（脚手架 / 机制 / 主循环 / web / 分发）开一个 worktree，不按任务开。
+
+---
+
+# Python 迁移计划（SafeFix）· rewrite/python-safefix
+
+> 以下为迁移分支的 living plan；旧 TS 计划保留于上文与 Git 历史。
+
+| 里程碑 | 状态 | 完成提交 |
+|---|---|---|
+| M0 审计 + 原测试/构建实测 + source-audit.md | ✅ | e0c7417 |
+| M1 Python 骨架 + 核心 parity（TDD） | ✅ | a23f9a0 … 5930b57 |
+| M2 Docker 沙箱 + 工作区隔离 + 模式分离 | ✅ | da7f5f4 |
+| M3 修复工作流 + 独立验证 + fixture + 沙箱集成 | ✅ | 34fcfb0 / 8bdd581 |
+| M4 A/B/C 评估 + 报告 + mock 管线验证 | ✅ | c364078 |
+| M5 CLI + CI + 文档 + 简历证据 | ✅ | 04fbaee / 1eb9df7 + 文档提交 |
+| 后续：real 模型评估 / 扩充基准 / 多语言适配器 | ⬜ | 见 docs/limitations.md 路线图 |
+
+## Python SafeFix：修复结果复验
+
+- [x] 区分 pytest 用例失败、全绿与运行环境错误。基线未确认缺陷时停止模型循环并保存证据。
+- [x] 用独立工作区重放最终 `patch.diff`，核对工作区基准并重跑验证测试。
+- [x] 简化本地仓库入口，更新快速开始，运行离线回归和真实上游历史案例。

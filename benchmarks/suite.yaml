@@ -1,0 +1,25 @@
+# SafeFix benchmark suite (Python/pytest fixtures).
+# Each task references a fixture under benchmarks/fixtures/<name>/ with:
+#   repo/  (buggy project + agent-visible tests), eval/ (independent tests),
+#   task.yaml (issue, commands, license, defect class, budget).
+# Base commit SHA is recorded per run at materialization time (see outcome.json).
+suite: safefix-python-v1
+description: >
+  Five original fixtures reproducing common defect classes (off-by-one,
+  validation, edge-case handling). Not external CVEs; licenses are MIT.
+tasks:
+  - id: paginate-offbyone
+    fixture: paginate
+    budget: {max_llm_calls: 12, max_wall_seconds: 300}
+  - id: clamp-wrong-bound
+    fixture: clamp
+    budget: {max_llm_calls: 12, max_wall_seconds: 300}
+  - id: slugify-edge-separators
+    fixture: slugify
+    budget: {max_llm_calls: 12, max_wall_seconds: 300}
+  - id: moving-average-last-window
+    fixture: moving-average
+    budget: {max_llm_calls: 12, max_wall_seconds: 300}
+  - id: binary-search-absent
+    fixture: binary-search
+    budget: {max_llm_calls: 12, max_wall_seconds: 300}

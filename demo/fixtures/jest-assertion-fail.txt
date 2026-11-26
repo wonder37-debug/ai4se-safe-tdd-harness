@@ -1,9 +1,0 @@
-FAIL  ./add.test.js
-  ● add › returns sum
-
-    expect(received).toBe(expected)
-
-    Expected: 5
-    Received: 3
-
-      at Object.<anonymous> (add.test.js:4:17)

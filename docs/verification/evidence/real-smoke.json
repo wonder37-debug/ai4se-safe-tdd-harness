@@ -1,0 +1,25 @@
+{
+  "mode": "real",
+  "model": "qwen3.8-flash",
+  "endpoint_host": "llm-wvdrtvcinxatskep.cn-beijing.maas.aliyuncs.com",
+  "checks": {
+    "request_reached_provider": true,
+    "fenced_action_parsed": true,
+    "action_validated": true,
+    "usage_recorded": true,
+    "native_tool_calling": true,
+    "explicit_provider_error": true
+  },
+  "usage_sample": {
+    "prompt_tokens": 87,
+    "completion_tokens": 70
+  },
+  "stop_reason": "stop",
+  "native_tool_call": {
+    "name": "read_file",
+    "arguments": {
+      "path": "a.py"
+    }
+  },
+  "error_type": "AuthError"
+}

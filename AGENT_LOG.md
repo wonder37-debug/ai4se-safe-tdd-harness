@@ -586,3 +586,131 @@
   - **纯函数上移消除反向依赖**：`stripActionFences` 原在 `cli/repl.ts`，`AgentLoop` 要用就会 loop→cli 反向依赖。上移到 `protocol/actionProtocol`（围栏本就属协议层），repl re-export 保兼容——分层更干净。
   - **废除裸 JSON 兜底要给中性替代**：默认分支原 `JSON.stringify(payload)` 改为 `esc(ev.type)` 极简系统行，避免未知事件类型回退成"看似 bug 的 JSON 堆"。
 - **commit**：见 `feat(web): enhance UI event stream with LLM thoughts and human-friendly logs`。
+
+---
+
+# Python 迁移（SafeFix）· 分支 rewrite/python-safefix
+
+> 2026-11-23 · 任务来源：用户提供的《Rewrite in Python and Upgrade into a Real-World Coding Agent》任务书。
+> 工作流偏差说明：本次按任务书 M0–M5 里程碑增量执行（任务书优先于旧 Superpowers worktree/PR 流程）；
+> TDD 红-绿循环全程保持；未推送远端、未开 PR（任务书明确禁止未经授权推送）。
+
+- **M0 审计**（commit e0c7417）：实测 `npm test` 87 suites / 593 passed / 3 skipped；`npm run build` 成功；
+  Docker daemon 初始未运行（如实记录）。产出 docs/migration/source-audit.md（含 TS→Python 映射与 R1–R10 风险清单）。
+- **M1 核心 parity**（a23f9a0 / 627bfff / 5e04fa6 / 0612448 / 17f2853 / 5930b57）：
+  uv + CPython 3.12.13 骨架；models/协议/护栏/审批/反馈/mock/provider/记忆/凭据/工具/循环，
+  每模块先写测试看红再实现。156 测试时点全绿。教训：shlex.punctuation_chars 是只读属性须构造器传入；
+  Windows 规则在原始串先行匹配（与原版一致），测试预期须按 parity 修正而非改实现。
+- **M2 沙箱**（da7f5f4）：DockerExecutor 加固 argv + 不可用显式拒绝；prepare_workspace clone 隔离；
+  real/mock/demo 显式分离。期间启动 Docker Desktop（D:\Docker）使集成实测成为可能。
+- **M3 修复工作流**（34fcfb0 / 8bdd581）：5 个缺陷 fixture + 纯 Python diff 应用器 + 独立验证器；
+  离线 e2e verified；**真实 Docker 沙箱集成 8 项全过**（含沙箱内完整修复 50.1s）。
+  教训：测试内裸 `python` 在 Windows 解析到无 pytest 的解释器 → 改用 sys.executable 并断言 FAILED 输出，
+  避免"因错误原因而红"的假阳性。
+- **M4 评估**（c364078）：A/B/C runner + JSON/CSV/MD 报告；examples/run_mock_suite.py 15/15 verified
+  （明确标注 MOCK 管线验证，非模型成绩）。
+- **M5 CLI/文档**（04fbaee / 1eb9df7 + 本次文档提交）：Typer/Rich 六命令 + 可选 Streamlit；
+  CI 切换 Python（GitHub unit-test + sandbox-integration；GitLab 保留字面 unit-test job）；
+  沙箱镜像 docker build 实测成功；README 重写 + 架构/安全/评估/限制/迁移报告/简历证据 + 学习文档 00–09。
+- **诚实性记录**：本环境无 .env 凭据 → real-LLM 集成 NOT RUN（显式 skip）；symlink 测试因 Windows 权限 skip；
+  覆盖率 89%（ui_app 未装 streamlit 不计）。所有声明均有测试/运行证据支撑。
+- **TDD 偏差记录**：security/cli_approval.py 一处实现先于测试落盘（同批补测试并验证），其余模块均严格红→绿。
+- **最终验证**：206 unit passed + 1 skipped；8 integration passed；ruff 全绿；`safefix demo` 实测 verified。
+
+---
+
+# 最终验证与 PR 交付（2026-11-23 续）
+
+- **独立复核**：旧报告 214/2/89%/8/15 全部复核一致；发现并修复 4 个工程缺陷：
+  ① 陈旧 .pyc（WSL 确定性复现：同秒 mtime + 尺寸巧合 → 补丁后重测执行旧代码；
+  修复：apply_patch 后清 __pycache__，回归测试）② 沙箱默认镜像缺 pytest（改用
+  safefix-sandbox:latest + conftest 自动构建 + CI 构建步骤）③ wheel 数据路径错配
+  （净室安装暴露；修复后净室 demo verified / eval 5/5）④ Windows rmtree 泄漏致
+  套件重跑碰撞（onexc 处理器 + 幂等重跑测试）。
+- **真实 LLM（qwen3.8-flash，凭据经 gitignored .env，绝不打印/提交）**：
+  冒烟 6 项全过（含原生 tool calling 与显式 AuthError）；3 次真实修复 verified
+  （paginate 7 调用 / held-out querystring 10 调用 / 门控集成 10 调用）；
+  真实 A/B/C：A 0/5、B 5/5、C 5/5，85,785 tokens，预算 ≤12 调用/任务。
+- **Linux 验证**：WSL2 Ubuntu 212 passed 0 skipped（symlink 真实执行）；
+  WSL Docker 集成未启用（不改动用户设置），Linux 宿主沙箱由 CI ubuntu 覆盖。
+- **旧实现清除**：68 个 TS/JS/Jest/Node 配置文件删除；历史文档与 Git 历史保留。
+- **最终矩阵**：Windows 219 passed/2 skipped；WSL 212/0；ruff 全绿；uv build 成功；
+  净室安装冒烟通过；密钥扫描干净。
+- **报告**：docs/verification/{real-llm-validation,migration-final-audit,pr-readiness}.md
+  + evidence/；README/evaluation/portfolio/limitations 同步更新为真实结果。
+- **PR**：推送 github 远端（非 origin GitLab）并开 PR 目标 main；不自动合并。
+- **PR #1 已创建**：https://github.com/wonder37-debug/ai4se-safe-tdd-harness/pull/1
+  （313 文件变更，65 个旧 TS/JS 文件删除）。CI 诊断与修复：Linux bind-mount
+  权限（容器用户匹配工作区属主，永不 root）+ 两处旧测试硬编码 uid 预期修正
+  （经 CI 注解定位）；最终 HEAD 8458500 上 unit-test 与 sandbox-integration
+  均 success（含 ubuntu 真实沙箱修复）。凭据始终仅存 gitignored .env，未打印/提交。
+
+---
+
+# PR #1 Review 修复轮（2026-11-23 续）
+
+- 读取 12 条 review threads（7 P1 + 5 P2），逐项核对代码：**全部确认真实问题**，无误报。
+- 严格 TDD：每条先写复现失败的回归测试再修复。灾难正则用例在 RED 阶段实测挂死
+  进程（终止后继续），证明 P1 成立。
+- P1：.git 元数据围栏 + 宿主 git 硬化（fsmonitor/hooks/ext-diff/textconv）；search 逐文件
+  symlink 围栏；untracked 纳入补丁导出与验证（--no-index，避免 git add 触发 filter）；
+  测试配置防篡改 + 可信 pytest 覆盖 + "N passed" 执行证据；--cidfile + docker rm -f
+  超时/取消清理；有界流式输出；search 可杀死子进程超时。
+- P2：公平 single-shot（preseed 源码+复现证据）；events 每运行隔离；多 hunk 偏移单调匹配；
+  root 宿主 chown 工作区；墙钟预算约束在途调用（迟到 finish 拒绝）。
+- 过程中修正两处自身引入的回归：JsonlSink "w" 每次截断、GIT_CONFIG_NOSYSTEM 破坏
+  系统级 autocrlf 一致性（改为仅覆盖仓库级可执行配置）。
+- 实测：239 unit passed/2 skip；8 Docker integration passed；真实验收 2 passed（强制
+  verified，98.5s）；v2 真实 A/B/C：A 2/5 · B 5/5 · C 5/5（92,959 tokens）；v1 标记方法学
+  缺陷存档；ruff/build/净室安装全过。
+- 报告：docs/verification/review-fixes.md（逐条映射）+ evaluation/portfolio/README 更新。
+
+---
+
+# PR #1 Review 第二~五轮修复（2026-11-23 续）
+
+每轮均为 reviewer 针对上一轮修复代码提出的新问题；全部先写 RED 回归测试再修复（TDD），
+逐条映射见 docs/verification/review-fixes.md §13–§24。
+
+- **第二轮**（commit `e88364d`，2 P1）：root 宿主 chown 跟随 symlink 可改宿主文件所有者 →
+  chown 永不跟随 symlink；测试文件类型变更（T）与 copy（C）绕过防篡改 → name-status 纳入
+  T/C，rename/copy 记录两端路径都判定。
+- **第三轮**（commit `10c0400`，4 P1 + 1 P2）：容器可写挂载下写入 `.git/config` 的 clean
+  filter 被宿主 git 执行 → 宿主侧读取改用冻结的 sanitized git 快照；容器提交移动 HEAD 使
+  防篡改/补丁导出失去原始基准 → 快照同时固定原始 HEAD；rename 记录只查目标路径 → 双端检查；
+  memory symlink 把宿主文件注入 system prompt → 记忆读取加围栏；截断的 git 输出被当作完整
+  补丁交付 → 显式失败而非静默不完整。
+- **第四轮**（commit `0b5ea14`，2 P1）：`.gitignore` 可隐藏受保护文件 → untracked 枚举不再依赖
+  工作区 ignore 规则，改用 harness 固定规则；`read_file` 读 FIFO 挂死宿主事件循环 →
+  `stat.S_ISREG` 拒绝非普通文件 + 有界读取。同轮修复 Linux CI 测试环境（clone 内缺 git
+  identity 导致 exit 128，属测试环境而非产品缺陷）。
+- **第五轮**（1 P1 + 2 P2，git 路径编码与二进制补丁，本次提交）：
+  - `4665584602`（P1）非 ASCII 路径被 git 默认输出引号转义后绕过 tests_untouched →
+    name-status 改 `-z`（NUL 分隔原始路径），按状态 token 解析（R/C 占两个路径）。
+  - `4665584617`（P2）转义路径导致新增文件静默遗漏出补丁 → `untracked_files` 用
+    `ls-files --others -z`，原始路径直接进 `--no-index` diff，绝不 strip。
+  - `4665584631`（P2）二进制变更导出不可应用 → tracked 与 `--no-index` diff 统一加 `--binary`；
+    并发现伴生缺陷：`patch.diff` 以 `write_text` 落盘时 Windows 文本模式把 `\n` 转 `\r\n`
+    损坏二进制补丁 → 改 `write_bytes` 原始字节。
+  - 回归测试：`tests/unit/test_round5_security.py`（3 用例，其中二进制用例用
+    `git apply --check` 在 base 状态真实校验补丁可应用性，非仅断言文本）。
+- **收尾实测**（Windows 本机，含第五轮改动）：
+  - `pytest tests`：**255 passed, 8 skipped**（6 Windows symlink/mkfifo 权限 + 2 门控真实 LLM），113.8s；
+    `pytest tests/unit` 单独：247 passed, 6 skipped；覆盖率 **88%**。
+  - Docker 沙箱集成：**8 passed**（含容器无泄漏、沙箱内完整修复）。
+  - 真实 LLM 验收（`SAFEFIX_REAL_LLM=1`）：**2 passed**，107.3s，强制 verified。
+  - `ruff check` / `ruff format --check`（CI 范围 `src/safefix tests`）：全绿（93 files already formatted）。
+- **文档校正**：README 与 portfolio-evidence 以单元套件口径记录 **247 通过、6 跳过**，
+  修复报告单列含 Docker 的全量结果。五轮共处理 **24 条** review 意见。
+- **凭据**：全程仅存 gitignored `.env`，未打印、未提交、未写入 shell 历史。
+- **提交前复核**（2026-11-23，`verification-before-completion` / `finishing-a-development-branch`）：
+  Windows 全量 247 通过、16 跳过，覆盖率 88%。本机 Docker daemon 不可用，8 个 Docker 集成用例跳过，
+  2 个真实 LLM 用例保持门控关闭，另有 6 个 Windows 文件权限相关跳过。Ruff 检查与格式校验通过。
+- **Linux CI 回归复核**（2026-11-23，`systematic-debugging` / `test-driven-development`）：
+  `1825d82` 的 `unit-test` 中有 1 个用例失败。Linux 默认 `core.quotePath=true` 时，补丁以引号转义中文路径，
+  原断言只接受未转义的文件名。Windows 在单进程启用同一配置后复现失败。测试现将补丁应用到原始仓库，
+  校验中文文件名和文件内容。
+
+## 2026-11-26 · 修复结果复验
+
+以开源工具和招聘样本里的任务复现、回归测试、失败归因为输入，梳理 SafeFix 的入门使用和证据链。沿用现有 Python 版规格、独立 worktree 和测试先行流程。新增三条回归测试先在原基线失败，分别暴露基线错误后仍调用模型、复用 Agent 工作区验收、当前仓库须显式传路径的问题。由 Codex 实现及验证，未引入外部 Agent runner。公开缺陷复验使用上游已发布补丁和脚本模型。

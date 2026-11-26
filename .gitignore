@@ -3,6 +3,21 @@ node_modules/
 dist/
 *.log
 
+# Python (SafeFix rewrite)
+.venv/
+.venv-wsl/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+build/
+.safefix-runs/
+benchmarks/results/*/src/
+
 # 本地参考文档与本地 AI 指引，不纳入仓库
 CLAUDE.md
 AI4SE 期末项目 · 通用要求（所有项目必读）.md

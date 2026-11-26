@@ -1,0 +1,6 @@
+{"seq":0,"type":"action","payload":{"tool":"read_file","args":{"path":"searchkit/bisect.py"}},"iter":1,"ts":0.0}
+{"seq":0,"type":"observation","payload":{"ok":true,"stdout":"","stderr":"","exit_code":null,"error":null,"content":"\"\"\"Binary search: first index of target in a sorted list.\"\"\"\n\n\ndef find_first(sorted_items, target):\n    lo, hi = 0, len(sorted_items)\n    while lo < hi:\n        mid = (lo + hi) // 2\n        if sorted_items[mid] < target:\n            lo = mid + 1\n        else:\n            hi = mid\n    return lo if lo < len(sorted_items) else -1"},"iter":1,"ts":0.0}
+{"seq":0,"type":"halt","payload":{"reason":"cap"},"iter":1,"ts":0.0}
+{"seq":0,"type":"action","payload":{"tool":"list_files","args":{"path":"","recursive":true}},"iter":1,"ts":0.0}
+{"seq":0,"type":"observation","payload":{"ok":true,"stdout":"","stderr":"","exit_code":null,"error":null,"content":"searchkit/\nsearchkit/__init__.py\nsearchkit/bisect.py\ntests/\ntests/test_bisect.py"},"iter":1,"ts":0.0}
+{"seq":0,"type":"halt","payload":{"reason":"cap"},"iter":1,"ts":0.0}

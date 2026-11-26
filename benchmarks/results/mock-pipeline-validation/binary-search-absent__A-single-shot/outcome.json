@@ -1,0 +1,49 @@
+{
+  "status": "verified",
+  "halt_reason": "cap",
+  "iterations": 1,
+  "llm_calls": 1,
+  "steps": 1,
+  "usage": {
+    "prompt_tokens": 0,
+    "completion_tokens": 0
+  },
+  "duration_s": 0.0,
+  "base_commit": "70b0179457ba6dfbcce83129ca32ec9487557a48",
+  "patch": "diff --git a/searchkit/bisect.py b/searchkit/bisect.py\nindex 5fd8570..7cd86f3 100644\n--- a/searchkit/bisect.py\n+++ b/searchkit/bisect.py\n@@ -9,4 +9,4 @@ def find_first(sorted_items, target):\n             lo = mid + 1\n         else:\n             hi = mid\n-    return lo if lo < len(sorted_items) else -1\n\\ No newline at end of file\n+    return lo if lo < len(sorted_items) and sorted_items[lo] == target else -1\n\\ No newline at end of file\n",
+  "repro_before": {
+    "exit_code": 1,
+    "passed": false,
+    "tail": " tests/test_bisect.py::test_absent_returns_minus_one - assert 2 == -1\r\n1 failed, 1 passed in 0.05s\r\nD:\\workspace\\ai4se-safe-tdd-harness\\.venv\\Lib\\site-packages\\pytest_asyncio\\plugin.py:306: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\r\nThe event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\r\n\r\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\r\n"
+  },
+  "verification": {
+    "checks": [
+      {
+        "name": "patch_nonempty",
+        "passed": true,
+        "detail": "working-tree diff vs HEAD"
+      },
+      {
+        "name": "tests_untouched",
+        "passed": true,
+        "detail": "no existing test files modified/deleted"
+      },
+      {
+        "name": "repro_passes",
+        "passed": true,
+        "detail": "ncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\r\n\r\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\r\n"
+      },
+      {
+        "name": "regression_passes",
+        "passed": true,
+        "detail": "ncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\r\n\r\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\r\n"
+      },
+      {
+        "name": "eval_passes",
+        "passed": true,
+        "detail": "ncio will default the loop scope for asynchronous fixtures to \"function\" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\". Set it to \"fixture-scope\" to keep the current behavior.\r\n\r\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\r\n"
+      }
+    ]
+  },
+  "failure_analysis": null
+}

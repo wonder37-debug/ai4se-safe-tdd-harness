@@ -1,0 +1,49 @@
+{
+  "status": "verified",
+  "halt_reason": "finish",
+  "iterations": 10,
+  "llm_calls": 10,
+  "steps": 9,
+  "usage": {
+    "prompt_tokens": 13426,
+    "completion_tokens": 961
+  },
+  "duration_s": 16.014999999984866,
+  "base_commit": "6f441ac4ef099ce6642c9c2a39d591d15b20f737",
+  "patch": "diff --git a/urlkit/parse.py b/urlkit/parse.py\nindex 8a75294..b450f46 100644\n--- a/urlkit/parse.py\n+++ b/urlkit/parse.py\n@@ -12,5 +12,7 @@ def parse_query(query):\n         if not part:\n             continue\n         key, _, value = part.partition(\"=\")\n-        result[key] = value\n+        if key not in result:\n+            result[key] = []\n+        result[key].append(value)\n     return result\n\\ No newline at end of file\n",
+  "repro_before": {
+    "exit_code": 1,
+    "passed": false,
+    "tail": " Differing items:\nE         {'a': '1'} != {'a': ['1']}\nE         Use -v to get more diff\n\ntests/test_parse.py:5: AssertionError\n_________________________ test_repeated_keys_preserved _________________________\n\n    def test_repeated_keys_preserved():\n>       assert parse_query(\"tag=x&tag=y\") == {\"tag\": [\"x\", \"y\"]}\nE       AssertionError: assert {'tag': 'y'} == {'tag': ['x', 'y']}\nE         \nE         Differing items:\nE         {'tag': 'y'} != {'tag': ['x', 'y']}\nE         Use -v to get more diff\n\ntests/test_parse.py:9: AssertionError\n=========================== short test summary info ============================\nFAILED tests/test_parse.py::test_single_pair - AssertionError: assert {'a': '...\nFAILED tests/test_parse.py::test_repeated_keys_preserved - AssertionError: as...\n2 failed in 0.14s\n"
+  },
+  "verification": {
+    "checks": [
+      {
+        "name": "patch_nonempty",
+        "passed": true,
+        "detail": "working-tree diff vs HEAD"
+      },
+      {
+        "name": "tests_untouched",
+        "passed": true,
+        "detail": "no existing test files modified/deleted"
+      },
+      {
+        "name": "repro_passes",
+        "passed": true,
+        "detail": "..                                                                       [100%]\n2 passed in 0.06s\n"
+      },
+      {
+        "name": "regression_passes",
+        "passed": true,
+        "detail": "..                                                                       [100%]\n2 passed in 0.06s\n"
+      },
+      {
+        "name": "eval_passes",
+        "passed": true,
+        "detail": ".......                                                                  [100%]\n7 passed in 0.08s\n"
+      }
+    ]
+  },
+  "failure_analysis": null
+}

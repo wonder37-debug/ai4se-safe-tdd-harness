@@ -1,0 +1,19 @@
+id: slugify-edge-separators
+title: "slugify() leaves leading/trailing separators"
+language: python
+framework: pytest
+license: MIT (original fixture written for SafeFix)
+defect_class: missing edge-case handling
+issue: |
+  textutil/slugify.py converts text to a URL slug: lowercase, replace runs of
+  non-alphanumeric characters with a single '-'. Slugs must not start or end
+  with '-'; symbol-only input should produce an empty slug. Currently padded
+  punctuation yields '-hello-world-'. Fix the implementation. Do not modify
+  the tests.
+repro_command: "python -m pytest -q tests/test_slugify.py"
+test_command: "python -m pytest -q"
+setup: []
+budget:
+  max_llm_calls: 12
+  max_steps: 24
+  max_wall_seconds: 300

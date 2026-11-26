@@ -1,0 +1,12 @@
+diff --git a/searchkit/bisect.py b/searchkit/bisect.py
+index 5fd8570..7cd86f3 100644
+--- a/searchkit/bisect.py
++++ b/searchkit/bisect.py
+@@ -9,4 +9,4 @@ def find_first(sorted_items, target):
+             lo = mid + 1
+         else:
+             hi = mid
+-    return lo if lo < len(sorted_items) else -1
+\ No newline at end of file
++    return lo if lo < len(sorted_items) and sorted_items[lo] == target else -1
+\ No newline at end of file
